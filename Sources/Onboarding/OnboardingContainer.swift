@@ -22,11 +22,18 @@ struct OnboardingContainer: View {
 
             // Current phase content, directly on the background. Changing the step
             // id drives the sweep: current screen slides out, next slides in.
+            // Window-shade transition: the next screen sits static underneath
+            // (insertion = identity) while the outgoing screen slides up and off
+            // the top edge, revealing it. The negative zIndex keys off the step so
+            // the OUTGOING screen (lower step on advance) stays on top and does the
+            // sliding — otherwise SwiftUI would stack the incoming view above it and
+            // the reveal wouldn't be visible.
             phaseContent
                 .id(state.step)
+                .zIndex(-Double(state.step))
                 .transition(.asymmetric(
-                    insertion: .move(edge: .trailing).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)))
+                    insertion: .identity,
+                    removal: .move(edge: .top)))
 
             // Thin progress strip for the onboarding steps (2–8), at the top edge.
             if state.step >= 2 {

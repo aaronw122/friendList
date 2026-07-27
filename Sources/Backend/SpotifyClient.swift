@@ -39,9 +39,8 @@ struct SpotifyClient {
         }
     }
 
-    /// Set the playlist cover. Body is a base64-encoded JPEG string (NOT JSON) with
-    /// `Content-Type: image/jpeg`; Spotify returns 202 Accepted and the cover appears
-    /// a few seconds later. Requires the `ugc-image-upload` scope.
+    /// Set the playlist cover. Body is a base64 JPEG string (not JSON), `image/jpeg`;
+    /// returns 202 and the cover lands a few seconds later. Needs `ugc-image-upload`.
     func uploadImage(playlistID: String, base64JPEG: String) async throws {
         _ = try await send("PUT", "/playlists/\(playlistID)/images",
                            body: Data(base64JPEG.utf8), contentType: "image/jpeg")
@@ -60,8 +59,7 @@ struct SpotifyClient {
     }
 
     /// Send with bearer auth, honoring 429 `Retry-After` and retrying 5xx briefly.
-    /// `contentType` defaults to JSON; the image endpoint overrides it with
-    /// `image/jpeg` since its body is a raw base64 string, not JSON.
+    /// `contentType` defaults to JSON; the image endpoint overrides it to `image/jpeg`.
     private func send(_ method: String, _ path: String, body: Data?,
                       contentType: String = "application/json", attempt: Int = 0) async throws -> Data {
         let token = try await tokenProvider()

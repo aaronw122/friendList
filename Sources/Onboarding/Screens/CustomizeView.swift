@@ -85,8 +85,7 @@ struct CustomizeView: View {
         .onAppear { state.seedNameIfNeeded() }
     }
 
-    /// The 104pt cover well: the chosen image once picked, otherwise the striped
-    /// default with a "default cover" hint.
+    /// The chosen cover once picked, otherwise the striped default.
     @ViewBuilder
     private var coverWell: some View {
         if let cover = state.coverPreview {

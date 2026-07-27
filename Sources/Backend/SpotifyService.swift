@@ -66,20 +66,14 @@ actor SpotifyService: SpotifyProviding {
             progress(frac, "Adding tracks… \(added)/\(trackURIs.count)")
         }
 
-        // Cover is best-effort: a failed upload (network, odd file, async 202 that
-        // never lands) must not fail an otherwise-complete playlist. But CANCELLATION
-        // is not a "failure" to swallow — if the create Task was cancelled (user hit
-        // Back), rethrow so we don't wrongly report success and jump to All-set.
-        // URLSession surfaces cancellation as URLError.cancelled, Task.sleep as
-        // CancellationError, so we check for both.
+        // Cover is best-effort — a failed upload must not fail the playlist. But
+        // cancellation (user hit Back) is rethrown, else we'd falsely report success.
         if let coverImageBase64 {
             progress(0.98, "Setting the cover image…")
             do {
                 try await client.uploadImage(playlistID: playlist.id, base64JPEG: coverImageBase64)
             } catch {
-                if error is CancellationError || (error as? URLError)?.code == .cancelled {
-                    throw error
-                }
+                if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
                 NSLog("friendList: cover image upload failed (non-fatal): \(error.localizedDescription)")
             }
         }

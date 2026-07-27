@@ -292,7 +292,6 @@ final class OnboardingState {
         } catch is CancellationError {
             // User navigated away mid-create; don't present an error or advance.
         } catch let urlError as URLError where urlError.code == .cancelled {
-            // Same, surfaced by URLSession as a cancelled request.
         } catch {
             createLabel = "Couldn't finish: \(error.localizedDescription)"
             // Leave the user on the Creating screen with the error; Back still works.
@@ -322,8 +321,7 @@ final class OnboardingState {
         case 4: resetCover(); go(to: 2)   // SpotifyKeys → Pick chat (skip the auto-
                                           // advancing Scanning step, which would
                                           // otherwise re-scan and bounce us forward).
-                                          // Clear the cover: a different chat may be
-                                          // picked from here.
+                                          // resetCover: a different chat may be picked here.
         case 2: go(to: 1)                 // Pick chat → Welcome
         case 0, 1: break                  // no back from Home / Welcome
         default: go(to: max(step - 1, 1))
@@ -389,9 +387,8 @@ final class OnboardingState {
         go(to: 2)
     }
 
-    /// Customize "Use your own": pick a JPEG/PNG and prepare it for Spotify's cover
-    /// endpoint (square 640px base64 JPEG ≤ 256KB). Non-blocking failure — on a bad
-    /// file we surface `coverError` and keep the default cover.
+    /// Customize "Use your own": pick a JPEG/PNG and prepare it for the cover
+    /// endpoint. A bad file surfaces `coverError` and keeps the default cover.
     @MainActor
     func pickCoverImage() {
         let panel = NSOpenPanel()
@@ -406,8 +403,7 @@ final class OnboardingState {
             return
         }
         do {
-            // Decode once: the same NSImage backs both the upload payload and the
-            // preview, so they can never disagree.
+            // Decode once so the payload and preview can't disagree.
             coverImageBase64 = try PlaylistImage.base64JPEG(from: image)
             coverPreview = image
             coverError = nil
@@ -417,9 +413,7 @@ final class OnboardingState {
         }
     }
 
-    /// Drop any chosen cover. Called when starting a fresh creation and when Back
-    /// returns to the chat picker (where a different chat can be selected) — a cover
-    /// picked for one chat must not ride along to another.
+    /// Drop any chosen cover, so it can't ride along to a different chat.
     func resetCover() {
         coverPreview = nil
         coverImageBase64 = nil

@@ -4,8 +4,7 @@ import SwiftUI
 //
 // The granted scope rows below MUST accurately mirror SpotifyConfig.scopes:
 //   playlist-modify-private → "Create and edit your private playlists"
-//   playlist-read-private   → "Read your playlists — to skip songs already added"
-//   user-library-read       → "Check your Liked Songs — to skip duplicates"
+//   ugc-image-upload        → "Set your playlist's cover image"
 struct OAuthConsentView: View {
     @Environment(OnboardingState.self) private var state
 
@@ -64,6 +63,11 @@ struct OAuthConsentView: View {
             ScopeRow(
                 dot: Palette.spotify,
                 text: "Create and edit your private playlists",
+                textColor: Palette.privacyText
+            )
+            ScopeRow(
+                dot: Palette.spotify,
+                text: "Set your playlist's cover image",
                 textColor: Palette.privacyText
             )
             ScopeRow(

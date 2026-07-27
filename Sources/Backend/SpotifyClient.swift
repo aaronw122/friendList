@@ -39,6 +39,13 @@ struct SpotifyClient {
         }
     }
 
+    /// Set the playlist cover. Body is a base64 JPEG string (not JSON), `image/jpeg`;
+    /// returns 202 and the cover lands a few seconds later. Needs `ugc-image-upload`.
+    func uploadImage(playlistID: String, base64JPEG: String) async throws {
+        _ = try await send("PUT", "/playlists/\(playlistID)/images",
+                           body: Data(base64JPEG.utf8), contentType: "image/jpeg")
+    }
+
     // MARK: - Transport
 
     private func request<T: Decodable>(_ method: String, _ path: String, body: Data?, decode: T.Type) async throws -> T {
@@ -52,13 +59,15 @@ struct SpotifyClient {
     }
 
     /// Send with bearer auth, honoring 429 `Retry-After` and retrying 5xx briefly.
-    private func send(_ method: String, _ path: String, body: Data?, attempt: Int = 0) async throws -> Data {
+    /// `contentType` defaults to JSON; the image endpoint overrides it to `image/jpeg`.
+    private func send(_ method: String, _ path: String, body: Data?,
+                      contentType: String = "application/json", attempt: Int = 0) async throws -> Data {
         let token = try await tokenProvider()
         var req = URLRequest(url: base.appendingPathComponent(String(path.dropFirst())))
         req.httpMethod = method
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if body != nil {
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue(contentType, forHTTPHeaderField: "Content-Type")
             req.httpBody = body
         }
 
@@ -73,13 +82,13 @@ struct SpotifyClient {
             // is safe.
             let retry = Double(http.value(forHTTPHeaderField: "Retry-After") ?? "1") ?? 1
             try await Task.sleep(nanoseconds: UInt64((retry + 0.2) * 1_000_000_000))
-            return try await send(method, path, body: body, attempt: attempt + 1)
+            return try await send(method, path, body: body, contentType: contentType, attempt: attempt + 1)
         case 500..<600 where attempt < 3 && method == "GET":
             // Only retry idempotent GETs on 5xx. A POST (create playlist / add items)
             // may have applied server-side before the error, so a blind retry would
             // duplicate playlists or tracks.
             try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt)) * 1_000_000_000))
-            return try await send(method, path, body: body, attempt: attempt + 1)
+            return try await send(method, path, body: body, contentType: contentType, attempt: attempt + 1)
         default:
             throw SpotifyError.http(http.statusCode, String(decoding: data, as: UTF8.self))
         }

@@ -2,7 +2,6 @@ import Foundation
 
 // MARK: - Models
 
-/// A group conversation surfaced to the picker.
 struct GroupChat: Identifiable, Hashable {
     var id: String { guid }
     let guid: String
@@ -12,7 +11,6 @@ struct GroupChat: Identifiable, Hashable {
     var linkCount: Int
 }
 
-/// Live progress while scanning one chat's history.
 struct ScanProgress {
     let fraction: Double
     let messagesScanned: Int
@@ -20,22 +18,17 @@ struct ScanProgress {
     let label: String
 }
 
-/// Result of scanning one chat: de-duplicated track URIs in send order.
 struct ChatScan {
-    let trackURIs: [String]   // ordered, unique (in-app dedup applied)
+    let trackURIs: [String]
     let youtubeCount: Int
     let messagesScanned: Int
 }
 
 // MARK: - Seam
 
-/// M1 read surface. Sendable so a scan can run off the main actor.
 protocol MessagesReading: Sendable {
-    /// Cheap probe: can we actually read chat.db right now (Full Disk Access)?
     func canRead() -> Bool
-    /// Group chats for the picker, recency-sorted, with an approximate link count.
     func groupChats() throws -> [GroupChat]
-    /// Full-history scan of one chat, extracting unique Spotify track URIs.
     func scan(chatGUID: String, progress: @escaping (ScanProgress) -> Void) throws -> ChatScan
 }
 
@@ -51,15 +44,11 @@ struct MessagesReader: MessagesReading {
         self.parser = parser
     }
 
-    // Bound the picker's approximate link count to the most recent messages so
-    // it stays fast on large libraries. The exact per-chat scan runs later.
     private static let linkCountRecentWindow: Int64 = 40_000
 
     func canRead() -> Bool {
         do {
             let db = try SQLiteReadOnly(path: dbPath)
-            // Success = the query prepared and stepped without throwing. Do NOT
-            // require a row: a readable-but-empty `chat` table is still access.
             try db.query("SELECT 1 FROM chat LIMIT 1") { _ in }
             return true
         } catch {
@@ -70,11 +59,6 @@ struct MessagesReader: MessagesReading {
     func groupChats() throws -> [GroupChat] {
         let db = try SQLiteReadOnly(path: dbPath)
 
-        // Group detection, ordered per the canonical imessage-exporter approach:
-        // primary = participant count > 1; trusted secondary = style 43; the
-        // per-chat scalar subqueries avoid the join fan-out that would inflate
-        // counts. A group decayed to a single participant can slip through as a
-        // DM under the strict > 1 test — acceptable edge (style=43 recovers most).
         let sql = """
         SELECT c.ROWID,
                c.guid,
@@ -102,13 +86,11 @@ struct MessagesReader: MessagesReading {
                             last: row.int(5)))
         }
 
-        // Name fallback for group chats without a display name: build from handles.
         var names: [Int64: String] = [:]
         for raw in raws where raw.display.isEmpty {
             names[raw.rowid] = try participantName(chatRowID: raw.rowid, db: db)
         }
 
-        // Approximate per-chat Spotify link counts over the recent-message window.
         let counts = try recentLinkCounts(db: db)
 
         return raws.map { raw in
@@ -123,7 +105,6 @@ struct MessagesReader: MessagesReading {
     func scan(chatGUID: String, progress: @escaping (ScanProgress) -> Void) throws -> ChatScan {
         let db = try SQLiteReadOnly(path: dbPath)
 
-        // Resolve guid -> chat rowid and total message count (for progress).
         var chatRowID: Int64?
         try db.query("SELECT ROWID FROM chat WHERE guid = ? LIMIT 1", [.text(chatGUID)]) { row in
             chatRowID = row.int(0)
@@ -136,7 +117,6 @@ struct MessagesReader: MessagesReading {
             total = Int(row.int(0))
         }
 
-        // A message can join multiple chats — GROUP BY m.ROWID collapses those.
         let sql = """
         SELECT m.ROWID, m.text, m.attributedBody, m.payload_data
         FROM message m
@@ -174,9 +154,6 @@ struct MessagesReader: MessagesReading {
 
     // MARK: - Helpers
 
-    /// Concatenate the message's text column with lossy decodes of the
-    /// attributedBody and payload_data blobs (URL-preview balloons store the URL
-    /// in payload_data). Newlines keep runs from accidentally joining.
     private func combinedText(row: SQLiteRow) -> String {
         var parts: [String] = []
         if let t = row.text(1), !t.isEmpty { parts.append(t) }
@@ -200,13 +177,7 @@ struct MessagesReader: MessagesReading {
         return "\(handles.prefix(2).joined(separator: ", ")) +\(handles.count - 2)"
     }
 
-    /// One bounded pass over the most-recent messages, tallying which chats had
-    /// at least one Spotify link per message. Approximate but fast.
     private func recentLinkCounts(db: SQLiteReadOnly) throws -> [Int64: Int] {
-        // Count UNIQUE tracks per chat (same metric as the full scan), not raw
-        // occurrences — a link duplicated across text/attributedBody/payload_data
-        // would otherwise multiply the count. Bounded to the recent window for
-        // speed, so it's an estimate; the scan is the source of truth.
         var uris: [Int64: Set<String>] = [:]
         let sql = """
         SELECT cmj.chat_id, m.text, m.attributedBody, m.payload_data
@@ -224,7 +195,6 @@ struct MessagesReader: MessagesReading {
         return uris.mapValues(\.count)
     }
 
-    // Column indices differ from `scan` (chat_id is at 0 here).
     private func combinedTextForCount(row: SQLiteRow) -> String {
         var parts: [String] = []
         if let t = row.text(1), !t.isEmpty { parts.append(t) }

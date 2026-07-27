@@ -16,11 +16,12 @@ enum SpotifyConfig {
     static let redirectPath = "/auth-callback"
     static let redirectURI = "http://127.0.0.1:8888/auth-callback"
 
-    /// Least-privilege scope: just create/append the private playlist.
-    /// Dedup is in-app (a song sent twice in the chat is added once) — so we do
-    /// NOT read the user's playlists or Liked Songs. Dropped vs the handoff:
-    /// playlist-modify-public, playlist-read-private, user-library-read, ugc-image-upload.
-    static let scopes = ["playlist-modify-private"]
+    /// Least-privilege scopes: create/append the private playlist, plus set its
+    /// cover image (an optional step in Customize). Dedup is in-app (a song sent
+    /// twice in the chat is added once) — so we still do NOT read the user's
+    /// playlists or Liked Songs. Dropped vs the handoff:
+    /// playlist-modify-public, playlist-read-private, user-library-read.
+    static let scopes = ["playlist-modify-private", "ugc-image-upload"]
 
     /// Logging in and opening the dashboard are two separate steps on purpose:
     /// hitting the dashboard URL while logged out bounces to Spotify's marketing

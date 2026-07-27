@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 import Observation
 
 // MARK: - Models
@@ -51,6 +53,9 @@ final class OnboardingState {
     // Customize
     var name: String = ""
     var desc: String = "made by friendList :)"
+    var coverPreview: NSImage? = nil       // chosen cover, shown in the well
+    var coverImageBase64: String? = nil    // prepared for ugc-image-upload; nil = default cover
+    var coverError: String? = nil          // surfaced if the chosen file can't be prepared
 
     // Loaders
     var scanPct: Double = 0
@@ -273,7 +278,8 @@ final class OnboardingState {
         let uris = scannedTrackURIs
         do {
             let result = try await spotify.createPlaylist(
-                name: playlistName, description: description, trackURIs: uris
+                name: playlistName, description: description, trackURIs: uris,
+                coverImageBase64: coverImageBase64
             ) { frac, label in
                 Task { @MainActor in
                     // Progress callbacks can arrive out of order; never let the bar go backward.
@@ -283,6 +289,10 @@ final class OnboardingState {
             }
             createPct = 1
             completeCreation(externalURL: result.url, spotifyID: result.id)
+        } catch is CancellationError {
+            // User navigated away mid-create; don't present an error or advance.
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            // Same, surfaced by URLSession as a cancelled request.
         } catch {
             createLabel = "Couldn't finish: \(error.localizedDescription)"
             // Leave the user on the Creating screen with the error; Back still works.
@@ -309,9 +319,11 @@ final class OnboardingState {
 
     func back() {
         switch step {
-        case 4: go(to: 2)                 // SpotifyKeys → Pick chat (skip the auto-
+        case 4: resetCover(); go(to: 2)   // SpotifyKeys → Pick chat (skip the auto-
                                           // advancing Scanning step, which would
-                                          // otherwise re-scan and bounce us forward)
+                                          // otherwise re-scan and bounce us forward).
+                                          // Clear the cover: a different chat may be
+                                          // picked from here.
         case 2: go(to: 1)                 // Pick chat → Welcome
         case 0, 1: break                  // no back from Home / Welcome
         default: go(to: max(step - 1, 1))
@@ -371,9 +383,47 @@ final class OnboardingState {
         youtubeCount = 0
         found = 0
         name = ""              // reseeded from the newly-picked chat in Customize
+        resetCover()
         scanPct = 0
         createPct = 0
         go(to: 2)
+    }
+
+    /// Customize "Use your own": pick a JPEG/PNG and prepare it for Spotify's cover
+    /// endpoint (square 640px base64 JPEG ≤ 256KB). Non-blocking failure — on a bad
+    /// file we surface `coverError` and keep the default cover.
+    @MainActor
+    func pickCoverImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.jpeg, .png]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.prompt = "Use image"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let image = NSImage(contentsOf: url) else {
+            resetCover()
+            coverError = PlaylistImage.PrepError.unreadable.localizedDescription
+            return
+        }
+        do {
+            // Decode once: the same NSImage backs both the upload payload and the
+            // preview, so they can never disagree.
+            coverImageBase64 = try PlaylistImage.base64JPEG(from: image)
+            coverPreview = image
+            coverError = nil
+        } catch {
+            resetCover()
+            coverError = error.localizedDescription
+        }
+    }
+
+    /// Drop any chosen cover. Called when starting a fresh creation and when Back
+    /// returns to the chat picker (where a different chat can be selected) — a cover
+    /// picked for one chat must not ride along to another.
+    func resetCover() {
+        coverPreview = nil
+        coverImageBase64 = nil
+        coverError = nil
     }
 
     /// When entering Customize, seed the name field from the chat if empty.

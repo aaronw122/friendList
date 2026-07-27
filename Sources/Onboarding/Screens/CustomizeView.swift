@@ -44,18 +44,17 @@ struct CustomizeView: View {
                 HStack(alignment: .top, spacing: 20) {
                     // Cover column
                     VStack(spacing: 10) {
-                        StripeCover(size: 104)
-                            .overlay(
-                                Text("default\ncover")
-                                    .font(UIFont2.mono(10))
-                                    .foregroundStyle(Palette.faint)
-                                    .multilineTextAlignment(.center)
-                            )
-                            .shadowSpec(Shadows.coverThumb)
-                        LinkButton(title: "Use your own", size: 12) {
-                            // Stub: no-op for now.
-                            // Production: NSOpenPanel restricted to JPEG, encoded as
-                            // base64 JPEG ≤ 256KB for Spotify's ugc-image-upload.
+                        coverWell
+                        LinkButton(title: state.coverPreview == nil ? "Use your own" : "Change",
+                                   size: 12) {
+                            state.pickCoverImage()
+                        }
+                        if let err = state.coverError {
+                            Text(err)
+                                .font(UIFont2.ui(10))
+                                .foregroundStyle(Color(hex: "C2410C"))
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .frame(width: 104)
@@ -84,5 +83,28 @@ struct CustomizeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { state.seedNameIfNeeded() }
+    }
+
+    /// The 104pt cover well: the chosen image once picked, otherwise the striped
+    /// default with a "default cover" hint.
+    @ViewBuilder
+    private var coverWell: some View {
+        if let cover = state.coverPreview {
+            Image(nsImage: cover)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 104, height: 104)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous)) // matches StripeCover.corner
+                .shadowSpec(Shadows.coverThumb)
+        } else {
+            StripeCover(size: 104)
+                .overlay(
+                    Text("default\ncover")
+                        .font(UIFont2.mono(10))
+                        .foregroundStyle(Palette.faint)
+                        .multilineTextAlignment(.center)
+                )
+                .shadowSpec(Shadows.coverThumb)
+        }
     }
 }

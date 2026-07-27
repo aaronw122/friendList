@@ -13,6 +13,7 @@ final class StageScene: SKScene {
 
     /// Live objects in stable spawn order. `popEveryOther` walks this order.
     private var objects: [SKNode] = []
+    private var dropGeneration = 0
 
     // Drag / fling state
     private var grabbed: SKNode?
@@ -69,15 +70,20 @@ final class StageScene: SKScene {
 
     // MARK: Spawning
 
-    /// Clears the world and (re)drops all 14 objects: staggered, off-screen above
-    /// the top, random small angle. First at 260ms, then one every 130ms.
+    /// Clears the world and (re)drops all 14 objects: staggered above the top,
+    /// random small angle. First at 100ms, then one every 65ms.
     private func spawnObjects() {
         removeAllObjects()
+        dropGeneration += 1
+        let generation = dropGeneration
         for (i, spec) in PhysicsObjects.all.enumerated() {
-            let delay = 0.26 + Double(i) * 0.13
+            let delay = 0.10 + Double(i) * 0.065
             run(SKAction.sequence([
                 SKAction.wait(forDuration: delay),
-                SKAction.run { [weak self] in self?.drop(spec) }
+                SKAction.run { [weak self] in
+                    guard self?.dropGeneration == generation else { return }
+                    self?.drop(spec)
+                }
             ]))
         }
     }
@@ -86,14 +92,14 @@ final class StageScene: SKScene {
         guard size.width > 0 else { return }
         let node = PhysicsObjects.makeNode(spec)
         let x = CGFloat.random(in: spawnInset...(size.width - spawnInset))
-        let y = size.height + CGFloat.random(in: 120...640)
+        let y = size.height + CGFloat.random(in: 0...160)
         // Upright-biased objects (the iMessage bubble) lock level 67% of the time.
         let upright = spec.uprightBias && CGFloat.random(in: 0..<1) < 0.67
         node.position = CGPoint(x: x, y: y)
         node.zRotation = upright ? 0 : CGFloat.random(in: -0.6...0.6)
         node.zPosition = CGFloat(objects.count)
         node.physicsBody?.allowsRotation = !upright
-        node.physicsBody?.velocity = .zero
+        node.physicsBody?.velocity = CGVector(dx: 0, dy: -140)
         node.physicsBody?.angularVelocity = upright ? 0 : CGFloat.random(in: -1.2...1.2)
         addChild(node)
         objects.append(node)

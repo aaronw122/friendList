@@ -102,7 +102,7 @@ struct ScanningView: View {
 
         await state.performScan()
         try? await Task.sleep(for: .milliseconds(400))
-        guard !Task.isCancelled, state.step == 3 else { return }
+        guard !Task.isCancelled, state.step == 4 else { return }
         done = true
     }
 }

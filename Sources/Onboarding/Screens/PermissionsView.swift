@@ -8,19 +8,19 @@ struct PermissionsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Text("Some quick housekeeping")
+                .font(UIFont2.ui(26, 800))
+                .tracking(-0.03 * 26)
+                .foregroundStyle(Palette.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, SheetLayout.hInset)
+                .padding(.top, SheetLayout.topInset)
+
             Spacer(minLength: 0)
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Some quick housekeeping")
-                    .font(UIFont2.ui(26, 800))
-                    .tracking(-0.03 * 26)
-                    .foregroundStyle(Palette.ink)
-
-                accessCard
-                    .padding(.top, 20)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, SheetLayout.hInset)
+            accessCard
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, SheetLayout.hInset)
 
             Spacer(minLength: 0)
 
@@ -63,40 +63,31 @@ struct PermissionsView: View {
                     .padding(.top, 6)
 
                 PrimaryButton(title: "Request access", metrics: .compact) { state.requestAccess() }
-                    .padding(.top, 16)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 48)
             }
 
             privacyText
-                .padding(.top, 16)
+                .padding(.top, 48)
         }
         .frame(maxWidth: .infinity)
         .padding(26)
     }
 
     private var privacyText: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            (
-                Text("Your chats stay private. ")
-                    .font(UIFont2.ui(12.5, 700))
-                    .foregroundStyle(Palette.privacyLead)
-                + Text("friendList scans Messages locally to find song links.")
-                    .font(UIFont2.ui(12.5))
-                    .foregroundStyle(Palette.privacyText)
-            )
-            .lineSpacing(6)
-            .multilineTextAlignment(.leading)
-
-            Link(destination: URL(string: "https://github.com/aaronw122/friendList")!) {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left.forwardslash.chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                    Text("View the source on GitHub")
-                        .font(UIFont2.ui(12, 700))
-                }
-                .foregroundStyle(Palette.accent)
-            }
-            .buttonStyle(.plain)
-        }
+        (
+            Text("🔒 Your chats stay private. ")
+                .font(UIFont2.ui(12.5, 700))
+                .foregroundStyle(Palette.privacyLead)
+            + Text("friendList scans Messages locally to find song links. ")
+                .font(UIFont2.ui(12.5))
+                .foregroundStyle(Palette.privacyText)
+            + Text("[View the source on GitHub](https://github.com/aaronw122/friendList)")
+                .font(UIFont2.ui(12.5, 700))
+        )
+        .lineSpacing(6)
+        .multilineTextAlignment(.leading)
+        .tint(Palette.accent)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 13)
         .padding(.horizontal, 15)

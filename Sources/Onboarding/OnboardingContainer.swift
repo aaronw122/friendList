@@ -33,7 +33,7 @@ struct OnboardingContainer: View {
             if state.step >= 2 {
                 SheetTopProgressBar(fraction: state.progressFraction)
                     .frame(maxHeight: .infinity, alignment: .top)
-                    .zIndex(100)
+                    .zIndex(1000)
             }
 
             if state.canGoBack {

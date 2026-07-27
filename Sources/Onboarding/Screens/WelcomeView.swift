@@ -7,6 +7,12 @@ import SwiftUI
 struct WelcomeView: View {
     @Environment(OnboardingState.self) private var state
 
+    // Staggered entrance: the physics objects start dropping ~0.2s after launch
+    // (StageScene spawns the first at 0.26s); THEN the wordmark + subhead fade in,
+    // THEN the Continue button — so the screen assembles in that order.
+    @State private var showText = false
+    @State private var showButton = false
+
     var body: some View {
         ZStack {
             // Text block — 87pt from the top.
@@ -27,11 +33,22 @@ struct WelcomeView: View {
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.top, 87)
+            .opacity(showText ? 1 : 0)
+            .offset(y: showText ? 0 : 10)
 
             // CTA — 212pt from the bottom, independent of the text block.
             PrimaryButton(title: "Continue") { state.advance() }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .padding(.bottom, 212)
+                .opacity(showButton ? 1 : 0)
+                .offset(y: showButton ? 0 : 10)
+        }
+        .task {
+            // Let the objects begin falling first, then reveal text, then button.
+            try? await Task.sleep(for: .milliseconds(550))
+            withAnimation(.easeOut(duration: 0.5)) { showText = true }
+            try? await Task.sleep(for: .milliseconds(450))
+            withAnimation(.easeOut(duration: 0.5)) { showButton = true }
         }
     }
 }

@@ -19,18 +19,19 @@ struct OnboardingContainer: View {
                 .opacity(state.step >= 2 ? 0 : 1)
                 .allowsHitTesting(state.step < 2)
                 .animation(.easeInOut(duration: 0.35), value: state.step >= 2)
+                .zIndex(0)   // below content
 
-            // Current phase content, directly on the background. Changing the step
-            // id drives the sweep: current screen slides out, next slides in.
+            // Current phase content, directly on the background.
             // Window-shade transition: the next screen sits static underneath
             // (insertion = identity) while the outgoing screen slides up and off
-            // the top edge, revealing it. The negative zIndex keys off the step so
-            // the OUTGOING screen (lower step on advance) stays on top and does the
-            // sliding — otherwise SwiftUI would stack the incoming view above it and
-            // the reveal wouldn't be visible.
+            // the top edge, revealing it. zIndex must stay in a band ABOVE the
+            // physics stage (0) and BELOW the progress/back chrome (100); within
+            // that band it DECREASES with step so the OUTGOING screen (lower step
+            // on advance) stays on top and does the sliding. (A naive negative
+            // zIndex here would sink the screen behind the physics stage.)
             phaseContent
                 .id(state.step)
-                .zIndex(-Double(state.step))
+                .zIndex(10 - Double(state.step))
                 .transition(.asymmetric(
                     insertion: .identity,
                     removal: .move(edge: .top)))
@@ -39,6 +40,7 @@ struct OnboardingContainer: View {
             if state.step >= 2 {
                 SheetTopProgressBar(fraction: state.progressFraction)
                     .frame(maxHeight: .infinity, alignment: .top)
+                    .zIndex(100)   // above content
             }
 
             // Global Back — available on every onboarding step (2–8), bottom-left,
@@ -52,6 +54,7 @@ struct OnboardingContainer: View {
                 .frame(width: Geometry.sheetWidth)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .padding(.bottom, SheetLayout.footerInset + 12)
+                .zIndex(100)   // above content
             }
         }
         .frame(width: Geometry.contentWidth, height: Geometry.contentHeight)

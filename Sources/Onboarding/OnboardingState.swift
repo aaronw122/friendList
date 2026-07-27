@@ -24,15 +24,16 @@ struct Playlist: Identifiable, Hashable {
 
 // MARK: - Onboarding state machine
 //
-// step: 0 = home, 1 = welcome, 2 = pick chat, 3 = scanning,
-// 4 = Spotify keys, 5 = OAuth consent, 6 = customize, 7 = creating,
-// 8 = all set. Navigation is linear 1→2→3→4→5→6→7→8→home(0);
-// Home → 2. See handoff "Interactions & Behavior".
+// step: 0 = home, 1 = welcome, 2 = permissions, 3 = pick chat, 4 = scanning,
+// 5 = Spotify keys, 6 = OAuth consent, 7 = customize, 8 = creating,
+// 9 = all set. Navigation is linear 1→2→…→9→home(0); Home → 3.
+// See handoff "Interactions & Behavior".
 
 @Observable
 final class OnboardingState {
     var step: Int = 1
     var sheetIn: Bool = false
+    var goingBack: Bool = false
 
     // Chat selection
     var access: Bool = false          // Full Disk Access granted (real probe)
@@ -128,13 +129,19 @@ final class OnboardingState {
     var selectedChatName: String { pickedChat?.name ?? "" }
     var selectedChatLinks: Int { pickedChat?.links ?? 0 }
 
-    /// Continue is disabled on the chat step until a chat is selected.
-    var canAdvance: Bool { step != 2 || pickedID != nil }
+    /// Continue is gated on Permissions (needs access) and Pick chat (needs a pick).
+    var canAdvance: Bool {
+        switch step {
+        case 2: return access
+        case 3: return pickedID != nil
+        default: return true
+        }
+    }
 
-    /// Sheet-top progress width by step (2→16% … 8→100%).
+    /// Sheet-top progress width by step (2→12% … 9→100%).
     var progressFraction: Double {
-        let table: [Double] = [0, 0, 0.16, 0.32, 0.50, 0.66, 0.80, 0.92, 1.0]
-        return table[min(max(step, 0), 8)]
+        let table: [Double] = [0, 0, 0.12, 0.24, 0.40, 0.55, 0.68, 0.82, 0.93, 1.0]
+        return table[min(max(step, 0), 9)]
     }
 
     // MARK: - Full Disk Access
@@ -292,6 +299,7 @@ final class OnboardingState {
     // MARK: - Navigation
 
     func go(to newStep: Int) {
+        goingBack = newStep < step
         withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
             step = newStep
             sheetIn = newStep > 1
@@ -300,19 +308,20 @@ final class OnboardingState {
 
     func advance() {
         guard canAdvance else { return }
-        go(to: min(step + 1, 8))
+        go(to: min(step + 1, 9))
     }
 
     /// Whether a back navigation is available from the current step.
-    /// Steps 2–7 (the flow); All-set (8) has its own "Back to friendList".
-    var canGoBack: Bool { (2...7).contains(step) }
+    /// Steps 2–8 (the flow); All-set (9) has its own "Back to friendList".
+    var canGoBack: Bool { (2...8).contains(step) }
 
     func back() {
         switch step {
-        case 4: go(to: 2)                 // SpotifyKeys → Pick chat (skip the auto-
+        case 5: go(to: 3)                 // SpotifyKeys → Pick chat (skip the auto-
                                           // advancing Scanning step, which would
                                           // otherwise re-scan and bounce us forward)
-        case 2: go(to: 1)                 // Pick chat → Welcome
+        case 3: go(to: 2)                 // Pick chat → Permissions
+        case 2: go(to: 1)                 // Permissions → Welcome
         case 0, 1: break                  // no back from Home / Welcome
         default: go(to: max(step - 1, 1))
         }
@@ -348,7 +357,7 @@ final class OnboardingState {
             Persistence.recordSeen(chatGUID: guid, uris: scannedTrackURIs)
         }
         Persistence.didOnboard = true
-        go(to: 8)
+        go(to: 9)
     }
 
     /// Persist every playlist 1:1 — each row keeps its OWN spotifyID/chatGUID
@@ -373,7 +382,7 @@ final class OnboardingState {
         name = ""              // reseeded from the newly-picked chat in Customize
         scanPct = 0
         createPct = 0
-        go(to: 2)
+        go(to: 3)
     }
 
     /// When entering Customize, seed the name field from the chat if empty.

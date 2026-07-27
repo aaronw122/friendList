@@ -82,8 +82,7 @@ struct PickChatView: View {
                 .lineSpacing(6)   // line-height 1.5 at 12.5pt
 
                 // Transparency: link to the open-source repo.
-                // TODO: replace with the real friendList repo URL.
-                Link(destination: URL(string: "https://github.com/")!) {
+                Link(destination: URL(string: "https://github.com/aaronw122/friendList")!) {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left.forwardslash.chevron.right")
                             .font(.system(size: 10, weight: .semibold))

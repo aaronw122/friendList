@@ -25,3 +25,6 @@ FriendList.xcodeproj/
 *.keychain-db
 *.p12
 *.cer
+
+# Internal working docs (tribunal / code-review notes) — not for the public repo.
+notes/

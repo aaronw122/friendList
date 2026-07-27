@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
+<style>
+  body { margin:0; background:#E6E1D8; font-family:'Plus Jakarta Sans',system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#1D1B18; text-decoration:underline; text-underline-offset:3px; text-decoration-thickness:1.5px; }
+  a:hover { color:#6E5BC4; }
+  input, button { font-family:inherit; }
+  input:focus { outline:none; border-color:#B6A6F0 !important; }
+  @keyframes flpop { 0%{transform:scale(1);opacity:1} 55%{transform:scale(1.45);opacity:1} 100%{transform:scale(1.7);opacity:0} }
+  @keyframes flsway { 0%{transform:rotate(-3deg)} 100%{transform:rotate(3deg)} }
+  @keyframes flspin { to { transform:rotate(360deg) } }
+  @keyframes flpulse { 0%,100%{opacity:.35} 50%{opacity:1} }
+</style>
+</helmet>
+
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:60px 20px;background:radial-gradient(120% 100% at 50% 0%, #EFEBE3 0%, #E0DAD0 100%);">
+  <div style="width:760px;height:560px;background:#FBF9F5;border-radius:14px;box-shadow:0 32px 70px -20px rgba(40,33,25,.45), 0 2px 0 rgba(255,255,255,.7) inset;overflow:hidden;display:flex;flex-direction:column;">
+
+    <div style="height:36px;flex:none;display:flex;align-items:center;padding:0 14px;gap:8px;background:#F3F0EA;border-bottom:1px solid rgba(35,30,25,.07);">
+      <div style="width:11px;height:11px;border-radius:50%;background:#F0655A;"></div>
+      <div style="width:11px;height:11px;border-radius:50%;background:#F1BE43;"></div>
+      <div style="width:11px;height:11px;border-radius:50%;background:#5FC559;"></div>
+      <div style="flex:1;text-align:center;font-size:12px;font-weight:600;letter-spacing:.02em;color:#8B8377;margin-left:-40px;">FriendList</div>
+    </div>
+
+    <div ref="{{ stageRef }}" style="position:relative;flex:1;overflow:hidden;background:linear-gradient(180deg,#FDFBF7 0%,#F4F0E8 100%);cursor:grab;">
+
+      <div data-obj="vinyl" data-shape="circle" style="position:absolute;left:0;top:0;width:98px;height:98px;border-radius:50%;background:radial-gradient(circle at 35% 30%, #4A464E 0%, #22201F 40%, #171615 100%);box-shadow:0 8px 18px rgba(35,28,20,.28), inset 0 3px 0 rgba(255,255,255,.16), inset 0 -6px 10px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;">
+        <div style="width:34px;height:34px;border-radius:50%;background:#9B85F2;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 -2px 0 rgba(0,0,0,.15);">
+          <div style="width:7px;height:7px;border-radius:50%;background:#F6F3EE;"></div>
+        </div>
+      </div>
+
+      <div data-obj="cd" data-shape="circle" style="position:absolute;left:0;top:0;width:80px;height:80px;border-radius:50%;background:conic-gradient(from 200deg,#CFE7F5,#F3D9EE,#FBEFC9,#D6F0DC,#CFE7F5);box-shadow:0 8px 16px rgba(35,28,20,.22), inset 0 3px 0 rgba(255,255,255,.7), inset 0 -6px 10px rgba(0,0,0,.12);display:flex;align-items:center;justify-content:center;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#FBF9F5;box-shadow:inset 0 0 0 6px rgba(255,255,255,.55);"></div>
+      </div>
+
+      <div data-obj="cassette" data-shape="rect" style="position:absolute;left:0;top:0;width:118px;height:74px;border-radius:12px;background:#EFB63F;box-shadow:0 8px 16px rgba(35,28,20,.24), inset 0 3px 0 rgba(255,255,255,.45), inset 0 -5px 0 rgba(0,0,0,.12);padding:11px;box-sizing:border-box;display:flex;flex-direction:column;gap:7px;">
+        <div style="height:9px;border-radius:5px;background:rgba(255,255,255,.65);"></div>
+        <div style="flex:1;border-radius:7px;background:#FBF6EC;box-shadow:inset 0 2px 4px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:space-around;padding:0 10px;">
+          <div style="width:17px;height:17px;border-radius:50%;background:#3B352E;box-shadow:inset 0 0 0 5px #EFEAE0;"></div>
+          <div style="width:17px;height:17px;border-radius:50%;background:#3B352E;box-shadow:inset 0 0 0 5px #EFEAE0;"></div>
+        </div>
+      </div>
+
+      <div data-obj="headphones" data-shape="rect" style="position:absolute;left:0;top:0;width:92px;height:80px;">
+        <div style="position:absolute;left:0;top:0;width:92px;height:62px;box-sizing:border-box;border:13px solid #4B4550;border-bottom:none;border-radius:46px 46px 0 0;box-shadow:0 6px 14px rgba(35,28,20,.22);"></div>
+        <div style="position:absolute;left:0;bottom:0;width:27px;height:38px;border-radius:11px;background:#5B5466;box-shadow:inset 0 3px 0 rgba(255,255,255,.22), 0 5px 10px rgba(35,28,20,.2);"></div>
+        <div style="position:absolute;right:0;bottom:0;width:27px;height:38px;border-radius:11px;background:#5B5466;box-shadow:inset 0 3px 0 rgba(255,255,255,.22), 0 5px 10px rgba(35,28,20,.2);"></div>
+      </div>
+
+      <div data-obj="chain" data-shape="rect" style="position:absolute;left:0;top:0;width:104px;height:24px;display:flex;align-items:center;gap:2px;">
+        <div style="width:22px;height:22px;border-radius:50%;box-sizing:border-box;border:6px solid #E9BE4A;box-shadow:inset 0 1px 0 rgba(255,255,255,.6), 0 3px 6px rgba(35,28,20,.2);"></div>
+        <div style="width:22px;height:22px;border-radius:50%;box-sizing:border-box;border:6px solid #F0CB63;box-shadow:inset 0 1px 0 rgba(255,255,255,.6), 0 3px 6px rgba(35,28,20,.2);"></div>
+        <div style="width:22px;height:22px;border-radius:50%;box-sizing:border-box;border:6px solid #E9BE4A;box-shadow:inset 0 1px 0 rgba(255,255,255,.6), 0 3px 6px rgba(35,28,20,.2);"></div>
+        <div style="width:22px;height:22px;border-radius:50%;box-sizing:border-box;border:6px solid #F0CB63;box-shadow:inset 0 1px 0 rgba(255,255,255,.6), 0 3px 6px rgba(35,28,20,.2);"></div>
+      </div>
+
+      <div data-obj="smiley" data-shape="circle" style="position:absolute;left:0;top:0;width:62px;height:62px;border-radius:50%;background:#F4A0C0;box-shadow:0 7px 14px rgba(35,28,20,.22), inset 0 4px 0 rgba(255,255,255,.5), inset 0 -6px 0 rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;">
+        <div style="display:flex;gap:13px;">
+          <div style="width:6px;height:9px;border-radius:3px;background:#5A2C42;"></div>
+          <div style="width:6px;height:9px;border-radius:3px;background:#5A2C42;"></div>
+        </div>
+        <div style="width:22px;height:11px;border-bottom:4px solid #5A2C42;border-radius:0 0 22px 22px;"></div>
+      </div>
+
+      <div data-obj="note" data-shape="rect" style="position:absolute;left:0;top:0;width:48px;height:62px;">
+        <div style="position:absolute;right:8px;top:0;width:6px;height:48px;border-radius:3px;background:#37333C;"></div>
+        <div style="position:absolute;right:8px;top:0;width:18px;height:16px;border-radius:0 8px 10px 2px;background:#37333C;"></div>
+        <div style="position:absolute;left:0;bottom:0;width:32px;height:24px;border-radius:50%;background:#37333C;transform:rotate(-16deg);box-shadow:0 5px 10px rgba(35,28,20,.25), inset 0 3px 0 rgba(255,255,255,.18);"></div>
+      </div>
+
+      <div data-obj="star" data-shape="rect" style="position:absolute;left:0;top:0;width:58px;height:58px;background:#F3C63F;clip-path:polygon(50% 0%,62% 35%,98% 35%,69% 57%,80% 92%,50% 71%,20% 92%,31% 57%,2% 35%,38% 35%);filter:drop-shadow(0 6px 8px rgba(35,28,20,.22));"></div>
+
+      <div data-obj="heart" data-shape="rect" style="position:absolute;left:0;top:0;width:52px;height:46px;filter:drop-shadow(0 6px 8px rgba(35,28,20,.2));">
+        <div style="position:absolute;left:26px;top:0;width:26px;height:41px;background:#EF6079;border-radius:26px 26px 0 0;transform:rotate(-45deg);transform-origin:0 100%;"></div>
+        <div style="position:absolute;left:0;top:0;width:26px;height:41px;background:#EF6079;border-radius:26px 26px 0 0;transform:rotate(45deg);transform-origin:100% 100%;"></div>
+      </div>
+
+      <div data-obj="pick" data-shape="rect" style="position:absolute;left:0;top:0;width:50px;height:56px;background:linear-gradient(160deg,#7FC7B4,#4FA893);border-radius:46% 46% 46% 46% / 36% 36% 64% 64%;box-shadow:0 6px 12px rgba(35,28,20,.22), inset 0 3px 0 rgba(255,255,255,.4);"></div>
+
+      <div data-obj="ticket" data-shape="rect" style="position:absolute;left:0;top:0;width:118px;height:56px;filter:drop-shadow(0 7px 12px rgba(35,28,20,.22));">
+        <div style="width:100%;height:100%;background:#F0E3C4;box-sizing:border-box;display:flex;align-items:stretch;clip-path:polygon(0% 6%,3% 0%,14% 5%,26% 0%,39% 6%,52% 1%,64% 6%,76% 1%,88% 6%,100% 2%,97% 16%,100% 31%,96% 47%,100% 62%,97% 78%,100% 94%,89% 99%,77% 93%,63% 100%,50% 94%,37% 100%,24% 94%,12% 100%,2% 95%,4% 78%,0% 62%,3% 47%,0% 31%,3% 16%);">
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:6px;padding:0 13px;">
+            <div style="height:6px;width:92%;border-radius:3px;background:#C4B58E;"></div>
+            <div style="height:6px;width:58%;border-radius:3px;background:#D5C8A6;"></div>
+          </div>
+          <div style="width:0;border-left:2px dashed #C4B58E;margin:9px 0;"></div>
+          <div style="width:32px;display:flex;align-items:center;justify-content:center;">
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:7px;font-weight:500;letter-spacing:.14em;color:#8A7C56;transform:rotate(90deg);white-space:nowrap;">ADMIT ONE</div>
+          </div>
+        </div>
+      </div>
+
+      <div data-obj="link" data-shape="rect" style="position:absolute;left:0;top:0;width:136px;height:60px;border-radius:12px;background:#FFFFFF;box-shadow:0 8px 16px rgba(35,28,20,.16), inset 0 -3px 0 rgba(0,0,0,.05);display:flex;align-items:center;gap:10px;padding:10px;box-sizing:border-box;">
+        <div style="width:40px;height:40px;border-radius:7px;background:linear-gradient(145deg,#CDC6F5,#A996EE);flex:none;"></div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex:1;">
+          <div style="height:7px;width:100%;border-radius:4px;background:#DCD6CC;"></div>
+          <div style="height:7px;width:66%;border-radius:4px;background:#E7E2D9;"></div>
+        </div>
+      </div>
+
+      <div data-obj="jerry" data-shape="circle" style="position:absolute;left:0;top:0;width:96px;height:96px;border-radius:50%;overflow:hidden;background:#FFFFFF;box-shadow:0 8px 18px rgba(35,28,20,.24), inset 0 0 0 3px #FFFFFF;">
+        <img src="uploads/Cartoony SVG Request Jul 25 2026.png" alt="Jerry" style="position:absolute;left:50%;top:50%;width:168%;height:auto;transform:translate(-50%,-45.5%);pointer-events:none;">
+      </div>
+
+      <div data-obj="bubble" data-shape="rect" style="position:absolute;left:0;top:0;width:196px;height:46px;filter:drop-shadow(0 7px 14px rgba(20,80,170,.26));">
+        <div style="position:absolute;left:0;top:0;width:186px;height:46px;border-radius:23px;background:#1B8DFF;display:flex;align-items:center;justify-content:center;padding:0 18px;box-sizing:border-box;font-size:15px;font-weight:600;color:#FFFFFF;letter-spacing:-.015em;white-space:nowrap;">you need to hear this</div>
+        <div style="position:absolute;right:0;bottom:0;width:24px;height:24px;background:#1B8DFF;clip-path:path('M0,0 C0,11 7,19 21,22.5 C10,23 3,19.5 0,24 Z');transform:translate(-9px,-25.8px) rotate(0deg) scaleY(2.1);transform-origin:0% 0%;"></div>
+      </div>
+
+
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding:34px 0 0;pointer-events:{{ homePointer }};opacity:{{ homeOpacity }};transition:opacity .45s ease;">
+        <div style="width:430px;max-width:88%;background:rgba(255,255,255,.94);backdrop-filter:blur(10px);border-radius:16px;box-shadow:0 18px 40px -12px rgba(40,33,25,.34);padding:20px 22px 18px;">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;">
+            <div style="font-size:22px;font-weight:800;letter-spacing:-.03em;color:#1D1B18;">FriendList</div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#A79E90;">syncing</div>
+          </div>
+          <div style="margin-top:14px;display:flex;flex-direction:column;gap:9px;">
+            <sc-for list="{{ playlists }}" as="p" hint-placeholder-count="1">
+              <div style="display:flex;align-items:center;gap:12px;border:1px solid #EFEAE1;border-radius:12px;padding:10px 12px;background:#FDFCFA;">
+                <div style="width:42px;height:42px;border-radius:8px;flex:none;background:repeating-linear-gradient(135deg,#EFEBE3 0 6px,#E6E1D8 6px 12px);"></div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:14px;font-weight:700;color:#2A2622;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ p.name }}</div>
+                  <div style="margin-top:2px;font-size:12px;color:#8A8275;">{{ p.meta }}</div>
+                </div>
+                <div style="width:7px;height:7px;border-radius:50%;background:#5FC559;flex:none;animation:flpulse 2s ease-in-out infinite;"></div>
+              </div>
+            </sc-for>
+          </div>
+          <button onClick="{{ onNewPlaylist }}" style="margin-top:14px;width:100%;border:none;cursor:pointer;background:var(--fl-cta,#9B85F2);color:#fff;font-size:14px;font-weight:700;padding:12px;border-radius:12px;box-shadow:0 7px 16px rgba(90,68,190,.3), inset 0 2px 0 rgba(255,255,255,.32), inset 0 -3px 0 rgba(0,0,0,.12);">Create a new one</button>
+        </div>
+      </div>
+
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;text-align:center;padding:87px 60px 0;pointer-events:none;opacity:{{ heroOpacity }};transition:opacity .45s ease;">
+        
+        <div style="font-size:60px;font-weight:800;letter-spacing:-.035em;color:#1D1B18;line-height:1;text-shadow:0 2px 0 rgba(255,255,255,.9);">friendList</div><div style="margin-top:20px;font-size:17px;font-weight:500;color:#5D574E;max-width:400px;line-height:1.45;text-wrap:pretty;">turn a group chat's songs into a Spotify playlist — and keep it growing.</div>
+        
+      </div>
+
+      <div style="position:absolute;left:0;right:0;bottom:212px;display:flex;flex-direction:column;align-items:center;gap:10px;opacity:{{ heroOpacity }};transition:opacity .3s ease;pointer-events:{{ heroPointer }};">
+        <button onClick="{{ onStart }}" style="border:none;cursor:pointer;background:var(--fl-cta,#9B85F2);color:#fff;font-size:15px;font-weight:700;letter-spacing:-.01em;padding:14px 44px;border-radius:13px;box-shadow:0 8px 18px rgba(90,68,190,.35), inset 0 2px 0 rgba(255,255,255,.35), inset 0 -3px 0 rgba(0,0,0,.12);transition:transform .12s ease, box-shadow .12s ease;" style-hover="transform:translateY(-2px);box-shadow:0 12px 22px rgba(90,68,190,.42), inset 0 2px 0 rgba(255,255,255,.35), inset 0 -3px 0 rgba(0,0,0,.12);" style-active="transform:translateY(1px);">Continue</button>
+        
+      </div>
+
+      <div style="position: absolute; left: 0px; top: -29px; display: flex; justify-content: center; pointer-events: none">
+        <div style="width:600px;max-width:100%;background:#FFFFFF;border-radius:0 0 20px 20px;box-shadow:0 26px 50px -12px rgba(40,33,25,.4);transform:{{ sheetTransform }};transition:transform .62s cubic-bezier(.22,1.1,.36,1);pointer-events:auto;display:flex;flex-direction:column;max-height:100%;overflow:hidden;">
+
+          <div style="height:4px;flex:none;background:#EDE9E1;display:flex;">
+            <div style="background:var(--fl-cta,#9B85F2);border-radius:0 3px 3px 0;transition:width .5s ease;width:{{ progressWidth }};"></div>
+          </div>
+
+          <div style="padding:26px 34px 30px;overflow-y:auto;">
+
+            <sc-if value="{{ isChat }}" hint-placeholder-val="{{ true }}">
+              <div>
+                <div style="display:flex;gap:10px;align-items:flex-start;background:#F4F1FB;border-radius:12px;padding:12px 14px;margin-bottom:20px;">
+                  <div style="width:18px;height:18px;border-radius:5px;background:#9B85F2;flex:none;margin-top:1px;box-shadow:inset 0 -2px 0 rgba(0,0,0,.14);"></div>
+                  <div style="font-size:12.5px;line-height:1.5;color:#4A4459;">
+                    <strong style="color:#2E2840;">Everything stays on your Mac.</strong> FriendList reads Messages locally to spot song links. Your texts are never uploaded, stored, or seen by anyone — including us.
+                  </div>
+                </div>
+                <div style="font-size:26px;font-weight:800;letter-spacing:-.03em;color:#1D1B18;">Pick a group chat</div>
+                <div style="margin-top:7px;font-size:14px;color:#6B6459;line-height:1.5;">Just one to start. You can add more chats whenever you like.</div>
+
+                <sc-if value="{{ needsAccess }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-top:20px;border:1.5px dashed #DED8CC;border-radius:14px;padding:26px;text-align:center;">
+                    <div style="font-size:14px;font-weight:600;color:#3A352E;">FriendList needs Full Disk Access to read Messages</div>
+                    <div style="margin-top:6px;font-size:12.5px;color:#8A8275;">macOS will ask you to confirm in System Settings.</div>
+                    <button onClick="{{ onGrant }}" style="margin-top:16px;border:none;cursor:pointer;background:var(--fl-cta,#9B85F2);color:#fff;font-size:14px;font-weight:700;padding:11px 24px;border-radius:11px;box-shadow:0 6px 14px rgba(90,68,190,.3), inset 0 2px 0 rgba(255,255,255,.3);">Grant access</button>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ hasAccess }}" hint-placeholder-val="{{ true }}">
+                  <div style="margin-top:18px;border:1px solid #EAE5DB;border-radius:13px;overflow:hidden;max-height:184px;overflow-y:auto;">
+                    <sc-for list="{{ chats }}" as="c" hint-placeholder-count="5">
+                      <div onClick="{{ c.onPick }}" style="{{ c.style }}">
+                        <div style="{{ c.dotStyle }}"></div>
+                        <div style="flex:1;font-size:14px;font-weight:600;color:#2A2622;">{{ c.name }}</div>
+                        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#A79E90;">{{ c.count }}</div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <div style="margin-top:22px;display:flex;justify-content:flex-end;">
+                  <button onClick="{{ onNext }}" style="{{ ctaStyle }}">Continue</button>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ isSpotify }}" hint-placeholder-val="{{ false }}">
+              <div>
+                <div style="font-size:26px;font-weight:800;letter-spacing:-.03em;color:#1D1B18;">Sorry — Spotify makes us do this</div>
+                <div style="margin-top:7px;font-size:14px;color:#6B6459;line-height:1.5;max-width:470px;text-wrap:pretty;">Spotify only lets small apps like this one run on keys you create yourself. It takes about three minutes, and it means the playlist and the account are genuinely yours, not ours.</div>
+
+                <div style="margin-top:22px;display:flex;flex-direction:column;gap:16px;">
+                  <div style="display:flex;gap:13px;">
+                    <div style="width:22px;height:22px;border-radius:7px;background:#F1EDE4;flex:none;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#6B6459;">1</div>
+                    <div style="font-size:13.5px;color:#3A352E;line-height:1.55;">Open the <a href="https://developer.spotify.com/dashboard" target="_blank">Spotify developer dashboard</a> and hit <em>Create app</em>. Name it anything — “FriendList” works.</div>
+                  </div>
+                  <div style="display:flex;gap:13px;">
+                    <div style="width:22px;height:22px;border-radius:7px;background:#F1EDE4;flex:none;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#6B6459;">2</div>
+                    <div style="flex:1;">
+                      <div style="font-size:13.5px;color:#3A352E;line-height:1.55;">Paste this as the Redirect URI:</div>
+                      <div style="margin-top:8px;display:flex;align-items:center;gap:8px;background:#F7F5F0;border:1px solid #EAE5DB;border-radius:9px;padding:9px 12px;">
+                        <code style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#2A2622;">friendlist://callback</code>
+                        <button onClick="{{ onCopy }}" style="border:none;background:#E9E4DA;cursor:pointer;font-size:11.5px;font-weight:700;color:#5D574E;padding:5px 11px;border-radius:7px;">{{ copyLabel }}</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:13px;">
+                    <div style="width:22px;height:22px;border-radius:7px;background:#F1EDE4;flex:none;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#6B6459;">3</div>
+                    <div style="flex:1;">
+                      <div style="font-size:13.5px;color:#3A352E;line-height:1.55;">Copy your two keys over:</div>
+                      <div style="margin-top:9px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <input value="{{ clientId }}" onChange="{{ onClientId }}" placeholder="Client ID" style="border:1.5px solid #EAE5DB;border-radius:9px;padding:10px 12px;font-size:13px;color:#2A2622;background:#FDFCFA;font-family:'IBM Plex Mono',monospace;">
+                        <input value="{{ clientSecret }}" onChange="{{ onClientSecret }}" placeholder="Client secret" style="border:1.5px solid #EAE5DB;border-radius:9px;padding:10px 12px;font-size:13px;color:#2A2622;background:#FDFCFA;font-family:'IBM Plex Mono',monospace;">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="margin-top:24px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
+                  <a href="#" onClick="{{ onBack }}" style="font-size:13px;">Back</a>
+                  <button onClick="{{ onNext }}" style="{{ ctaStyle }}">Connect Spotify</button>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ isAuth }}" hint-placeholder-val="{{ false }}">
+              <div style="text-align:center;padding:6px 0 2px;">
+                <div style="width:66px;height:66px;margin:0 auto;border-radius:50%;background:#1DB954;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 22px rgba(29,185,84,.32), inset 0 -4px 0 rgba(0,0,0,.12);">
+                  <div style="display:flex;flex-direction:column;gap:4px;align-items:center;">
+                    <div style="width:30px;height:4px;border-radius:2px;background:#fff;"></div>
+                    <div style="width:24px;height:4px;border-radius:2px;background:#fff;"></div>
+                    <div style="width:17px;height:4px;border-radius:2px;background:#fff;"></div>
+                  </div>
+                </div>
+                <div style="margin-top:16px;font-size:26px;font-weight:800;letter-spacing:-.03em;color:#1D1B18;">Now the easy part</div>
+                <div style="margin-top:8px;font-size:14px;color:#6B6459;line-height:1.55;max-width:400px;margin:8px auto 0;text-wrap:pretty;">Sign in to Spotify and give FriendList permission to build playlists in your account. A browser window will open.</div>
+                <div style="margin-top:18px;display:inline-flex;flex-direction:column;gap:8px;text-align:left;background:#F7F5F0;border-radius:12px;padding:14px 18px;">
+                  <div style="display:flex;gap:9px;align-items:center;font-size:12.5px;color:#4A4459;"><div style="width:6px;height:6px;border-radius:50%;background:#1DB954;"></div>Create and edit your playlists</div>
+                  <div style="display:flex;gap:9px;align-items:center;font-size:12.5px;color:#4A4459;"><div style="width:6px;height:6px;border-radius:50%;background:#1DB954;"></div>Search the Spotify catalog</div>
+                  <div style="display:flex;gap:9px;align-items:center;font-size:12.5px;color:#9A9184;"><div style="width:6px;height:6px;border-radius:50%;background:#D8D2C6;"></div>Nothing else — no listening history, no following</div>
+                </div>
+                <div style="margin-top:22px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
+                  <a href="#" onClick="{{ onBack }}" style="font-size:13px;">Back</a>
+                  <button onClick="{{ onNext }}" style="{{ ctaStyle }}">Authorize with Spotify</button>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ isScan }}" hint-placeholder-val="{{ false }}">
+              <div style="text-align:center;padding:26px 0 20px;">
+                <div style="width:46px;height:46px;margin:0 auto;border-radius:50%;border:4px solid #EFEBE3;border-top-color:var(--fl-cta,#9B85F2);animation:flspin .8s linear infinite;"></div>
+                <div style="margin-top:20px;font-size:22px;font-weight:800;letter-spacing:-.03em;color:#1D1B18;">Reading {{ chatName }}</div>
+                <div style="margin-top:8px;font-size:13.5px;color:#6B6459;min-height:20px;">{{ scanLabel }}</div>
+                <div style="margin:20px auto 0;width:300px;height:6px;border-radius:3px;background:#EFEBE3;overflow:hidden;">
+                  <div style="height:100%;border-radius:3px;background:var(--fl-cta,#9B85F2);transition:width .4s ease;width:{{ scanPct }};"></div>
+                </div>
+                <div style="margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#A79E90;">{{ foundCount }} songs found</div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ isCreating }}" hint-placeholder-val="{{ false }}">
+              <div style="text-align:center;padding:26px 0 20px;">
+                <div style="width:46px;height:46px;margin:0 auto;border-radius:50%;border:4px solid #EFEBE3;border-top-color:var(--fl-cta,#9B85F2);animation:flspin .8s linear infinite;"></div>
+                <div style="margin-top:20px;font-size:22px;font-weight:800;letter-spacing:-.03em;color:#1D1B18;">Building your playlist</div>
+                <div style="margin-top:8px;font-size:13.5px;color:#6B6459;min-height:20px;">{{ createLabel }}</div>
+                <div style="margin:20px auto 0;width:300px;height:6px;border-radius:3px;background:#EFEBE3;overflow:hidden;">
+                  <div style="height:100%;border-radius:3px;background:var(--fl-cta,#9B85F2);transition:width .4s ease;width:{{ createPct }};"></div>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ isCustomize }}" hint-placeholder-val="{{ false }}">
+              <div>
+                <div style="display:inline-flex;align-items:center;gap:8px;background:#EFF7EF;border-radius:99px;padding:6px 13px;font-size:12px;font-weight:700;color:#3E7A44;">
+                  <div style="width:7px;height:7px;border-radius:50%;background:#5FC559;"></div>
+                  {{ trackCount }} songs found in {{ chatName }}
+                </div>
+                <div style="margin-top:14px;font-size:26px;font-weight:800;letter-spacing:-.03em;color:#1D1B18;">Make it yours</div>
+                <div style="margin-top:7px;font-size:14px;color:#6B6459;">Or leave it exactly as is — it already works.</div>
+
+                <div style="margin-top:20px;display:flex;gap:20px;align-items:flex-start;">
+                  <div style="flex:none;display:flex;flex-direction:column;align-items:center;gap:8px;">
+                    <div style="width:104px;height:104px;border-radius:10px;background:repeating-linear-gradient(135deg,#EFEBE3 0 8px,#E6E1D8 8px 16px);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px rgba(35,28,20,.14);">
+                      <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#A79E90;text-align:center;line-height:1.4;">default<br>cover</div>
+                    </div>
+                    <a href="#" onClick="{{ onNoop }}" style="font-size:12px;">Use your own</a>
+                  </div>
+                  <div style="flex:1;display:flex;flex-direction:column;gap:14px;">
+                    <div>
+                      <div style="font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9184;margin-bottom:6px;">Playlist name</div>
+                      <input value="{{ plName }}" onChange="{{ onPlName }}" style="width:100%;box-sizing:border-box;border:1.5px solid #EAE5DB;border-radius:10px;padding:11px 13px;font-size:14px;font-weight:600;color:#2A2622;background:#FDFCFA;">
+                    </div>
+                    <div>
+                      <div style="font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#9A9184;margin-bottom:6px;">Description</div>
+                      <input value="{{ plDesc }}" onChange="{{ onPlDesc }}" style="width:100%;box-sizing:border-box;border:1.5px solid #EAE5DB;border-radius:10px;padding:11px 13px;font-size:13.5px;color:#2A2622;background:#FDFCFA;">
+                    </div>
+                  </div>
+                </div>
+
+                <div style="margin-top:24px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
+                  <a href="#" onClick="{{ onBack }}" style="font-size:13px;">Back</a>
+                  <button onClick="{{ onNext }}" style="{{ ctaStyle }}">Create playlist</button>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+              <div style="text-align:center;padding:14px 0 6px;">
+                <div style="font-size:30px;font-weight:800;letter-spacing:-.03em;color:#1D1B18;">You're all set</div>
+                <div style="margin-top:10px;font-size:14.5px;color:#6B6459;line-height:1.55;max-width:380px;margin-left:auto;margin-right:auto;text-wrap:pretty;">{{ doneLine }}</div>
+                <div style="margin:20px auto 0;display:flex;align-items:center;gap:12px;background:#F7F5F0;border:1px solid #EAE5DB;border-radius:12px;padding:11px 14px;max-width:400px;text-align:left;">
+                  <div style="width:44px;height:44px;border-radius:7px;flex:none;background:repeating-linear-gradient(135deg,#EFEBE3 0 6px,#E6E1D8 6px 12px);"></div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:13.5px;font-weight:700;color:#2A2622;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ plName }}</div>
+                    <a href="https://open.spotify.com" target="_blank" style="font-size:12px;font-family:'IBM Plex Mono',monospace;color:#6B6459;">open.spotify.com/playlist/…</a>
+                  </div>
+                </div>
+                <div style="margin-top:22px;display:flex;flex-direction:column;align-items:center;gap:12px;">
+                  <button onClick="{{ onNoop }}" style="{{ ctaStyle }}">Open in Spotify</button>
+                  <a href="#" onClick="{{ onHome }}" style="font-size:12.5px;">Back to FriendList</a>
+                </div>
+              </div>
+            </sc-if>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:900,&quot;height&quot;:700},&quot;accentColor&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#9B85F2&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#9B85F2&quot;,&quot;#B7A2FF&quot;,&quot;#8A6FE8&quot;,&quot;#7C6BD6&quot;],&quot;section&quot;:&quot;Look&quot;},&quot;showChatBubble&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Onboarding scene&quot;},&quot;gravity&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1.05,&quot;min&quot;:0.4,&quot;max&quot;:2,&quot;step&quot;:0.05,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Onboarding scene&quot;}}">
+const CHATS = [
+  { name: "the boys", count: "48 links" },
+  { name: "brunch club", count: "31 links" },
+  { name: "Cabin Trip 2026", count: "12 links" },
+  { name: "roommates", count: "9 links" },
+  { name: "sunday runners", count: "6 links" },
+  { name: "Fam", count: "3 links" }
+];
+
+class Component extends DCLogic {
+  state = { step: 1, lists: [], sheetIn: false, access: false, pick: null, cid: "", sec: "", copied: false, name: "", desc: "Made from the group chat. Kept fresh by FriendList.", popped: false };
+
+  constructor(p) { super(p); this.stageRef = (el) => { this.stage = el; }; }
+
+  componentDidMount() { this.applyCta(); this.waitMatter(); }
+  componentDidUpdate() { this.applyCta(); }
+  componentWillUnmount() { this.dead = true; if (this.raf) cancelAnimationFrame(this.raf); if (this.timers) this.timers.forEach(clearTimeout); }
+
+  applyCta() { document.documentElement.style.setProperty("--fl-cta", this.props.accentColor || "#9B85F2"); }
+
+  waitMatter() {
+    if (this.dead) return;
+    if (window.Matter && this.stage) this.initPhysics();
+    else setTimeout(() => this.waitMatter(), 60);
+  }
+
+  initPhysics() {
+    const M = window.Matter;
+    const stage = this.stage;
+    const W = stage.clientWidth || 760, H = stage.clientHeight || 524;
+    const engine = M.Engine.create();
+    engine.gravity.y = this.props.gravity ?? 1.05;
+    this.engine = engine;
+    const world = engine.world;
+    const wallOpts = { isStatic: true, restitution: 0.4, friction: 0.6 };
+    M.Composite.add(world, [
+      M.Bodies.rectangle(W / 2, H + 40, W + 400, 80, wallOpts),
+      M.Bodies.rectangle(-40, H / 2, 80, H * 4, wallOpts),
+      M.Bodies.rectangle(W + 40, H / 2, 80, H * 4, wallOpts),
+      M.Bodies.rectangle(W / 2, -700, W + 400, 80, wallOpts)
+    ]);
+
+    const showBubble = this.props.showChatBubble ?? true;
+    let els = Array.from(stage.querySelectorAll("[data-obj]"));
+    els.forEach((el) => { if (el.dataset.obj === "bubble" && !showBubble) el.style.display = "none"; });
+    els = els.filter((el) => el.style.display !== "none");
+    this.items = [];
+
+    els.forEach((el, i) => {
+      const w = el.offsetWidth || 60, h = el.offsetHeight || 60;
+      const circle = el.dataset.shape === "circle";
+      const float = el.dataset.float === "1";
+      const x = 70 + Math.random() * (W - 140);
+      const y = -120 - Math.random() * 520;
+      const opts = { restitution: float ? 0.9 : 0.52, friction: 0.35, frictionAir: float ? 0.06 : 0.008, angle: (Math.random() - 0.5) * 1.2 };
+      const body = circle
+        ? M.Bodies.circle(x, y, w / 2, opts)
+        : M.Bodies.rectangle(x, y, w, h, Object.assign({ chamfer: { radius: Math.min(10, h / 3) } }, opts));
+      if (float) M.Body.setDensity(body, 0.00035);
+      const item = { el, body, w, h, float, phase: Math.random() * 6.28 };
+      this.items.push(item);
+      el.style.transform = "translate(" + (x - w / 2) + "px," + (y - h / 2) + "px)";
+      setTimeout(() => { if (!this.dead) M.Composite.add(world, body); }, 260 + i * 130);
+    });
+
+    const mouse = M.Mouse.create(stage);
+    const mc = M.MouseConstraint.create(engine, { mouse, constraint: { stiffness: 0.18, render: { visible: false } } });
+    M.Composite.add(world, mc);
+    ["wheel", "mousewheel"].forEach((ev) => mouse.element.removeEventListener(ev, mouse.mousewheel));
+
+    M.Events.on(engine, "beforeUpdate", () => {
+      const t = engine.timing.timestamp / 1000;
+      this.items.forEach((it) => {
+        if (!it.float || it.gone) return;
+        const lift = it.body.mass * engine.gravity.y * 0.0011;
+        M.Body.applyForce(it.body, it.body.position, { x: Math.sin(t * 0.9 + it.phase) * lift * 0.16, y: -lift });
+        if (it.body.position.y < 70) M.Body.applyForce(it.body, it.body.position, { x: 0, y: lift * 0.9 });
+      });
+    });
+
+    this.runner = M.Runner.create();
+    M.Runner.run(this.runner, engine);
+    const loop = () => {
+      if (this.dead) return;
+      this.items.forEach((it) => {
+        if (it.gone) return;
+        const p = it.body.position;
+        it.el.style.transform = "translate(" + (p.x - it.w / 2) + "px," + (p.y - it.h / 2) + "px) rotate(" + it.body.angle + "rad)";
+      });
+      this.raf = requestAnimationFrame(loop);
+    };
+    loop();
+  }
+
+  resetObjects() {
+    const M = window.Matter;
+    if (!M || !this.items) return;
+    const W = this.stage.clientWidth || 760;
+    this.items.forEach((it, i) => {
+      it.el.style.animation = "none";
+      void it.el.offsetWidth;
+      it.el.style.animation = "";
+      it.el.style.opacity = "1";
+      it.el.style.visibility = "visible";
+      if (it.gone) { it.gone = false; M.Composite.add(this.engine.world, it.body); }
+      M.Body.setPosition(it.body, { x: 70 + Math.random() * (W - 140), y: -120 - Math.random() * 460 - i * 30 });
+      M.Body.setVelocity(it.body, { x: 0, y: 0 });
+      M.Body.setAngularVelocity(it.body, (Math.random() - 0.5) * 0.14);
+    });
+  }
+
+  popHalf() {
+    const M = window.Matter;
+    if (!M || !this.items) return;
+    const solid = this.items.filter((it) => !it.float);
+    solid.forEach((it, i) => {
+      if (i % 2) return;
+      setTimeout(() => {
+        if (this.dead) return;
+        if (it.gone) return;
+        it.gone = true;
+        M.Composite.remove(this.engine.world, it.body);
+        it.el.style.transformOrigin = "center";
+        it.el.style.animation = "flpop .34s ease-out forwards";
+        setTimeout(() => { if (it.gone) it.el.style.visibility = "hidden"; }, 340);
+      }, i * 55);
+    });
+  }
+
+  go(step) {
+    this.setState({ step, sheetIn: step > 1 });
+    if (this.timers) this.timers.forEach(clearTimeout);
+    this.timers = [];
+    const at = (ms, fn) => this.timers.push(setTimeout(() => { if (!this.dead) fn(); }, ms));
+    if (step === 5) {
+      const total = this.state.pick != null ? parseInt(CHATS[this.state.pick].count) : 12;
+      this.setState({ scanPct: 0, found: 0, scanLabel: "Opening the local Messages database…" });
+      at(500, () => this.setState({ scanPct: 22, scanLabel: "Scanning 4,812 messages for links…" }));
+      at(1500, () => this.setState({ scanPct: 58, found: Math.round(total * 0.6), scanLabel: "Matching links to Spotify tracks…" }));
+      at(2500, () => this.setState({ scanPct: 88, found: total, scanLabel: "Removing duplicates…" }));
+      at(3200, () => { this.setState({ scanPct: 100 }); at(350, () => this.go(6)); });
+    }
+    if (step === 7) {
+      this.setState({ createPct: 0, createLabel: "Creating the playlist on Spotify…" });
+      at(500, () => this.setState({ createPct: 30, createLabel: "Adding tracks…" }));
+      at(1500, () => this.setState({ createPct: 72, createLabel: "Uploading cover art…" }));
+      at(2400, () => {
+        this.setState({ createPct: 100, createLabel: "Done" });
+        at(400, () => {
+          const s = this.state;
+          const nm = s.name || (s.pick != null ? CHATS[s.pick].name : "FriendList");
+          const n = s.pick != null ? parseInt(CHATS[s.pick].count) : 0;
+          this.setState({ lists: s.lists.concat([{ name: nm, meta: n + " songs · from " + (s.pick != null ? CHATS[s.pick].name : "a chat") }]) });
+          this.go(8);
+        });
+      });
+    }
+  }
+
+  renderVals() {
+    const s = this.state;
+    const chatName = s.pick != null ? CHATS[s.pick].name : "";
+    const canNext = s.step !== 2 || s.pick != null;
+    const cta = (on) => "border:none;cursor:" + (on ? "pointer" : "not-allowed") + ";background:" + (on ? "var(--fl-cta,#9B85F2)" : "#DED8CC") + ";color:#fff;font-size:14.5px;font-weight:700;letter-spacing:-.01em;padding:12px 28px;border-radius:12px;box-shadow:" + (on ? "0 7px 16px rgba(90,68,190,.32), inset 0 2px 0 rgba(255,255,255,.32), inset 0 -3px 0 rgba(0,0,0,.12)" : "none") + ";transition:transform .12s ease;";
+
+    return {
+      stageRef: this.stageRef,
+      heroOpacity: s.step === 1 ? 1 : 0,
+      heroPointer: s.step === 1 ? "auto" : "none",
+      homeOpacity: s.step === 0 ? 1 : 0,
+      homePointer: s.step === 0 ? "auto" : "none",
+      playlists: s.lists,
+      sheetTransform: s.sheetIn && s.step > 1 ? "translateY(0)" : "translateY(-105%)",
+      progressWidth: [0, 0, 16, 34, 50, 64, 80, 92, 100][Math.min(s.step, 8)] + "%",
+      isChat: s.step === 2, isSpotify: s.step === 3, isAuth: s.step === 4, isScan: s.step === 5,
+      isCustomize: s.step === 6, isCreating: s.step === 7, isDone: s.step === 8,
+      chatName: chatName || "your group chat",
+      scanPct: (s.scanPct || 0) + "%", scanLabel: s.scanLabel || "",
+      foundCount: s.found || 0,
+      createPct: (s.createPct || 0) + "%", createLabel: s.createLabel || "",
+      needsAccess: !s.access, hasAccess: s.access,
+      copyLabel: s.copied ? "Copied" : "Copy",
+      clientId: s.cid, clientSecret: s.sec,
+      plName: s.name || chatName || "FriendList",
+      plDesc: s.desc,
+      trackCount: s.pick != null ? parseInt(CHATS[s.pick].count) : 0,
+      doneLine: "FriendList is watching " + (chatName || "your group chat") + ". Every song anyone drops in lands in the playlist within a minute.",
+      ctaStyle: cta(canNext),
+      chats: CHATS.map((c, i) => ({
+        name: c.name, count: c.count,
+        onPick: () => this.setState({ pick: i, name: "" }),
+        style: "display:flex;align-items:center;gap:11px;padding:11px 14px;cursor:pointer;border-bottom:1px solid #F2EEE6;background:" + (s.pick === i ? "#F4F1FB" : "#fff") + ";",
+        dotStyle: "width:15px;height:15px;border-radius:50%;flex:none;box-sizing:border-box;border:" + (s.pick === i ? "5px solid var(--fl-cta,#9B85F2)" : "2px solid #D8D2C6") + ";"
+      })),
+      onStart: () => { this.popHalf(); setTimeout(() => this.go(2), 420); },
+      onGrant: () => this.setState({ access: true }),
+      onNext: () => { if (s.step === 2 && s.pick == null) return; this.go(Math.min(s.step + 1, 8)); },
+      onBack: (e) => { e.preventDefault(); this.go(s.step === 6 ? 4 : Math.max(s.step - 1, 2)); },
+      onCopy: () => { this.setState({ copied: true }); setTimeout(() => !this.dead && this.setState({ copied: false }), 1400); },
+      onClientId: (e) => this.setState({ cid: e.target.value }),
+      onClientSecret: (e) => this.setState({ sec: e.target.value }),
+      onPlName: (e) => this.setState({ name: e.target.value }),
+      onPlDesc: (e) => this.setState({ desc: e.target.value }),
+      onNoop: (e) => e.preventDefault(),
+      onHome: (e) => { e.preventDefault(); this.resetObjects(); this.go(0); },
+      onNewPlaylist: () => { this.setState({ pick: null, name: "" }); this.popHalf(); setTimeout(() => !this.dead && this.go(2), 420); },
+      onRestart: (e) => { e.preventDefault(); this.setState({ step: 1, sheetIn: false, pick: null, access: false }); }
+    };
+  }
+}
+
+</script>
+</body>
+</html>

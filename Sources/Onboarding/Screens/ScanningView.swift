@@ -76,12 +76,9 @@ struct LoaderScaffold: View {
 
 // MARK: - Scanning (step 3)
 
-/// Step 3 has two visual states that live on the SAME step (no renumber):
-///   1. `.scanning` — the spinner + live counter while chat.db is read
-///   2. `.done`     — a result screen ("We found X songs in …") with Continue
-/// The scan no longer auto-advances; the user confirms the count before we ask
-/// them to deal with Spotify. Keeping both states on step 3 leaves the state
-/// machine, Back/swipe, progress bar, and every `step ==` guard untouched.
+/// Step 3 shows two states on one step: the scanning spinner, then a result
+/// screen with the song count and Continue. Staying on a single step keeps the
+/// state machine, navigation, and progress bar unchanged.
 struct ScanningView: View {
     @Environment(OnboardingState.self) private var state
     @State private var ran = false
@@ -159,8 +156,7 @@ private struct ScanResultView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
 
-                // One line: "songs found in <chat>", with the chat name italic to
-                // mark it as a group-chat name.
+                // Chat name italic to mark it as a group-chat name.
                 (
                     Text(found == 1 ? "song found in " : "songs found in ")
                         .font(UIFont2.ui(22, 800))

@@ -203,12 +203,10 @@ struct MessagesReader: MessagesReading {
     /// One bounded pass over the most-recent messages, tallying which chats had
     /// at least one Spotify link per message. Approximate but fast.
     private func recentLinkCounts(db: SQLiteReadOnly) throws -> [Int64: Int] {
-        // Count UNIQUE tracks per chat (same metric as `scan`), not raw
-        // occurrences — otherwise a song reposted N times inflates the preview
-        // to several times the real playlist size (e.g. 1,249 occurrences vs 273
-        // unique songs). Still bounded to the recent-message window for speed, so
-        // this is an estimate that can undercount a chat with lots of old history;
-        // the result screen remains the source of truth for the actual count.
+        // Count UNIQUE tracks per chat (same metric as the full scan), not raw
+        // occurrences — a link duplicated across text/attributedBody/payload_data
+        // would otherwise multiply the count. Bounded to the recent window for
+        // speed, so it's an estimate; the scan is the source of truth.
         var uris: [Int64: Set<String>] = [:]
         let sql = """
         SELECT cmj.chat_id, m.text, m.attributedBody, m.payload_data

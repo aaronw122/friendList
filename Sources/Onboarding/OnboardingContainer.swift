@@ -21,14 +21,9 @@ struct OnboardingContainer: View {
                 .animation(.easeInOut(duration: 0.35), value: state.step >= 2)
                 .zIndex(0)   // below content
 
-            // Current phase content, directly on the background.
-            // Window-shade transition: the next screen sits static underneath
-            // (insertion = identity) while the outgoing screen slides up and off
-            // the top edge, revealing it. zIndex must stay in a band ABOVE the
-            // physics stage (0) and BELOW the progress/back chrome (100); within
-            // that band it DECREASES with step so the OUTGOING screen (lower step
-            // on advance) stays on top and does the sliding. (A naive negative
-            // zIndex here would sink the screen behind the physics stage.)
+            // Window-shade transition: the outgoing screen slides up off the top,
+            // revealing the next one underneath. zIndex decreases with step (within
+            // a band between physics and chrome) so the outgoing screen stays on top.
             phaseContent
                 .id(state.step)
                 .zIndex(10 - Double(state.step))

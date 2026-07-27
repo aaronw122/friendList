@@ -7,9 +7,8 @@ import SwiftUI
 struct WelcomeView: View {
     @Environment(OnboardingState.self) private var state
 
-    // Staggered entrance: the physics objects start dropping ~0.2s after launch
-    // (StageScene spawns the first at 0.26s); THEN the wordmark + subhead fade in,
-    // THEN the Continue button — so the screen assembles in that order.
+    // Staggered entrance: objects drop first, then the wordmark + subhead fade in,
+    // then the Continue button.
     @State private var showText = false
     @State private var showButton = false
 
@@ -44,7 +43,6 @@ struct WelcomeView: View {
                 .offset(y: showButton ? 0 : 10)
         }
         .task {
-            // Let the objects begin falling first, then reveal text, then button.
             try? await Task.sleep(for: .milliseconds(550))
             withAnimation(.easeOut(duration: 0.5)) { showText = true }
             try? await Task.sleep(for: .milliseconds(450))

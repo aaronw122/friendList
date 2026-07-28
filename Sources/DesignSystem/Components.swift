@@ -2,7 +2,6 @@ import SwiftUI
 
 // MARK: - Primary CTA
 
-/// Metrics for the accent button. Default = the "Continue" CTA (15/700, 14×44, r13).
 struct ButtonMetrics {
     var fontSize: CGFloat = 15
     var fontWeight: Int = 700
@@ -14,20 +13,16 @@ struct ButtonMetrics {
     var hoverY: CGFloat = 11
 
     static let cta = ButtonMetrics()
-    /// "Grant access" — 14/700, 11×24, r11, shadow 0 6px 14px rgba(90,68,190,.30).
     static let compact = ButtonMetrics(
         fontSize: 14, vPad: 11, hPad: 24, radius: 11,
         shadow: ShadowSpec(color: Color(hex: "5A44BE", opacity: 0.30), radius: 7, x: 0, y: 6),
         hoverRadius: 9, hoverY: 8)
-    /// Home "Create a new one" — 14/700, pad 12, r12, shadow 0 7px 16px rgba(90,68,190,.30).
     static let home = ButtonMetrics(
         fontSize: 14, vPad: 12, hPad: 0, radius: 12,
         shadow: ShadowSpec(color: Color(hex: "5A44BE", opacity: 0.30), radius: 8, x: 0, y: 7),
         hoverRadius: 10, hoverY: 9)
 }
 
-/// Accent CTA: white on accent, drop shadow + inner top highlight + inner bottom
-/// shade. Hover lifts 2pt, active presses 1pt. Pass `metrics:` for the variants.
 struct PrimaryButton: View {
     let title: String
     var enabled: Bool = true
@@ -51,7 +46,6 @@ struct PrimaryButton: View {
                         .fill(enabled ? Palette.accent : Palette.permBorder)
                 )
                 .overlay(
-                    // inner top highlight + inner bottom shade approximation
                     RoundedRectangle(cornerRadius: metrics.radius, style: .continuous)
                         .fill(
                             LinearGradient(
@@ -105,7 +99,7 @@ struct LinkButton: View {
             Text(title)
                 .font(UIFont2.ui(size, 500))
                 .foregroundStyle(color)
-                .underline(true, color: color.opacity(hovering ? 0.85 : 0.55)) // plain underlined link
+                .underline(true, color: color.opacity(hovering ? 0.85 : 0.55))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -114,9 +108,8 @@ struct LinkButton: View {
 
 // MARK: - Sheet top progress bar
 
-/// 4pt strip pinned to the top of the sheet. Widths by step (2→16% … 8→100%).
 struct SheetTopProgressBar: View {
-    let fraction: Double // 0...1
+    let fraction: Double
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
@@ -140,7 +133,7 @@ struct LabeledField: View {
     var placeholder: String = ""
     var mono: Bool = false
     var fontSize: CGFloat = 14
-    var weight: Int = 600          // input text weight (Name = 600; Description = 400)
+    var weight: Int = 600
     var labelColor: Color = Palette.labelMuted
 
     @FocusState private var focused: Bool
@@ -176,7 +169,6 @@ struct LabeledField: View {
 
 // MARK: - Persistent privacy footer ("On device · nothing leaves your Mac")
 
-/// PLAN requires a persistent local-only reassurance affordance on every screen.
 struct PrivacyFooter: View {
     var body: some View {
         HStack(spacing: 6) {
@@ -193,14 +185,11 @@ struct PrivacyFooter: View {
 // MARK: - Sheet layout helpers
 
 enum SheetLayout {
-    /// Sheet content padding (sheet is 600pt wide) — matches the HTML prototype.
     static let hInset: CGFloat = 34
     static let topInset: CGFloat = 26
     static let footerInset: CGFloat = 24
 }
 
-/// Standard footer row for sheet screens: a plain "Back" link on the left,
-/// a primary CTA on the right. Either side may be omitted.
 struct SheetFooter: View {
     var backTitle: String? = "Back"
     var onBack: (() -> Void)? = nil
@@ -225,8 +214,6 @@ struct SheetFooter: View {
 
 // MARK: - Striped cover placeholder (default playlist cover)
 
-/// Diagonal stripe pattern (default playlist cover) #EFEBE3 / #E6E1D8 at 135°.
-/// Cover well: stripe 8 / period 16. Home & AllSet thumbs: stripe 6 / period 12.
 struct StripeCover: View {
     var size: CGFloat = 104
     var corner: CGFloat = 10

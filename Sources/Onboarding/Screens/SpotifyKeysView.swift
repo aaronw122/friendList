@@ -1,16 +1,12 @@
 import SwiftUI
 
-// Step 4 — Spotify developer keys.
-//
-// Auth model is Authorization Code + PKCE, which uses the Client ID ONLY.
-// There is deliberately NO Client Secret field: a distributed native app
-// cannot keep a secret, and PKCE removes the need for one.
+// Native apps cannot keep a client secret, so Spotify authorization uses only a client ID with PKCE.
 struct SpotifyKeysView: View {
     @Environment(OnboardingState.self) private var state
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        @Bindable var state = state  // for the Client ID TextField binding
+        @Bindable var state = state
 
         VStack(spacing: 0) {
             ScrollView {
@@ -21,7 +17,7 @@ struct SpotifyKeysView: View {
 
                     Text("We need you to create a key yourself. It should take less than 2 minutes.")
                         .ui(14, 400, color: Palette.body)
-                        .lineSpacing(7) // ~1.5 line-height at 14pt
+                        .lineSpacing(7)
                         .frame(maxWidth: 470, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 14)
@@ -128,7 +124,6 @@ struct SpotifyKeysView: View {
             LabeledField(label: "CLIENT ID", text: clientId, placeholder: "Client ID", mono: true)
                 .padding(.top, 2)
 
-            // PKCE stores only the Client ID (no secret). It stays on-device.
             HStack(alignment: .top, spacing: 5) {
                 Text("🔒")
                     .font(.system(size: 11))
@@ -143,8 +138,6 @@ struct SpotifyKeysView: View {
 
 // MARK: - Step scaffold
 
-/// A numbered step: 22×22 rounded-square badge + a left-aligned content column,
-/// 13pt gap between them.
 private struct StepRow<Content: View>: View {
     let number: Int
     @ViewBuilder var content: Content
@@ -170,7 +163,6 @@ private struct StepRow<Content: View>: View {
 
 // MARK: - Pieces
 
-/// A lightweight bordered pill button that opens a URL (login / dashboard).
 private struct LaunchButton: View {
     let title: String
     var systemImage: String = "arrow.up.forward.square"
@@ -202,7 +194,6 @@ private struct LaunchButton: View {
     }
 }
 
-/// Right-aligned key/value row: muted label on the left, mono value on the right.
 private struct KeyValueRow: View {
     let label: String
     let value: String
@@ -218,8 +209,6 @@ private struct KeyValueRow: View {
     }
 }
 
-/// The Redirect URI code field with an inline Copy button that flips to
-/// "Copied" for 1400ms.
 private struct RedirectURIField: View {
     @Environment(OnboardingState.self) private var state
 

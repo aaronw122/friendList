@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Step 2 — Permissions. "Some quick housekeeping": requests Full Disk Access,
-/// with the local-only privacy reassurance below the button. Continue unlocks
-/// once access is granted; the CTA stays in place and enables in situ.
 struct PermissionsView: View {
     @Environment(OnboardingState.self) private var state
 

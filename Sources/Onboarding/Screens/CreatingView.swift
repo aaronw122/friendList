@@ -1,9 +1,6 @@
 import SwiftUI
 
 // MARK: - Creating (step 7)
-//
-// Identical layout to Scanning (LoaderScaffold), in accent purple, with no song
-// counter line.
 
 struct CreatingView: View {
     @Environment(OnboardingState.self) private var state
@@ -21,9 +18,8 @@ struct CreatingView: View {
 
     @MainActor
     private func runCreate() async {
-        guard !ran else { return } // guard against re-running if the view reappears
+        guard !ran else { return }
         ran = true
-        // Real Spotify create + populate; completeCreation() (→ step 8) runs on success.
         await state.createPlaylist()
     }
 }

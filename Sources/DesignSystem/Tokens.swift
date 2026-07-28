@@ -21,43 +21,39 @@ enum Palette {
     static let accentAlt1   = Color(hex: "B7A2FF")
     static let accentAlt2   = Color(hex: "8A6FE8")
     static let accentAlt3   = Color(hex: "7C6BD6")
-    static let ink          = Color(hex: "1D1B18") // headings
-    static let body         = Color(hex: "6B6459") // body copy
-    static let muted        = Color(hex: "8A8275") // secondary
-    static let faint        = Color(hex: "A79E90") // mono captions
-    static let subheadWarm  = Color(hex: "5D574E") // welcome subhead, copy-button label
-    static let labelMuted   = Color(hex: "9A9184") // uppercase field labels, excluded scope row, kicker
-    static let permTitle    = Color(hex: "3A352E") // FDA permission card title
-    static let permBorder   = Color(hex: "DED8CC") // FDA dashed border, disabled CTA
-    static let stepBadge    = Color(hex: "F1EDE4") // Spotify step numeral badge
-    static let line         = Color(hex: "EAE5DB") // borders
-    static let divider      = Color(hex: "F2EEE6") // list dividers
-    static let surface      = Color(hex: "FFFFFF") // sheet
-    static let field        = Color(hex: "FDFCFA") // inputs
-    static let well         = Color(hex: "F7F5F0") // code/scope blocks
-    static let tint         = Color(hex: "F4F1FB") // privacy card, selected row
-    static let focus        = Color(hex: "B6A6F0") // input focus border
-    static let success      = Color(hex: "5FC559") // sync dot
-    static let successText  = Color(hex: "3E7A44") // result pill text
-    static let successBg    = Color(hex: "EFF7EF") // result pill bg
-    static let spotify      = Color(hex: "1DB954") // OAuth badge only
-    static let imessage     = Color(hex: "1B8DFF") // bubble object
+    static let ink          = Color(hex: "1D1B18")
+    static let body         = Color(hex: "6B6459")
+    static let muted        = Color(hex: "8A8275")
+    static let faint        = Color(hex: "A79E90")
+    static let subheadWarm  = Color(hex: "5D574E")
+    static let labelMuted   = Color(hex: "9A9184")
+    static let permTitle    = Color(hex: "3A352E")
+    static let permBorder   = Color(hex: "DED8CC")
+    static let stepBadge    = Color(hex: "F1EDE4")
+    static let line         = Color(hex: "EAE5DB")
+    static let divider      = Color(hex: "F2EEE6")
+    static let surface      = Color(hex: "FFFFFF")
+    static let field        = Color(hex: "FDFCFA")
+    static let well         = Color(hex: "F7F5F0")
+    static let tint         = Color(hex: "F4F1FB")
+    static let focus        = Color(hex: "B6A6F0")
+    static let success      = Color(hex: "5FC559")
+    static let successText  = Color(hex: "3E7A44")
+    static let successBg    = Color(hex: "EFF7EF")
+    static let spotify      = Color(hex: "1DB954")
+    static let imessage     = Color(hex: "1B8DFF")
 
-    // Chrome
     static let titleBar     = Color(hex: "F3F0EA")
     static let titleText    = Color(hex: "8B8377")
     static let deskTop      = Color(hex: "FDFBF7")
     static let deskBottom   = Color(hex: "F4F0E8")
 
-    // Privacy card ink
     static let privacyText  = Color(hex: "4A4459")
     static let privacyLead  = Color(hex: "2E2840")
 
-    // Field ink
     static let fieldInk     = Color(hex: "2A2622")
     static let rowName      = Color(hex: "2A2622")
 
-    // Progress track
     static let progressTrack = Color(hex: "EDE9E1")
     static let spinnerTrack  = Color(hex: "EFEBE3")
 
@@ -89,7 +85,7 @@ enum Geometry {
     static let contentWidth: CGFloat = 760
     static let contentHeight: CGFloat = 560
     static let titleBarHeight: CGFloat = 36
-    static let stageHeight: CGFloat = 524 // content below title bar
+    static let stageHeight: CGFloat = 524
     static let sheetWidth: CGFloat = 600
 }
 
@@ -109,7 +105,6 @@ extension View {
 }
 
 enum Shadows {
-    // Window: 0 32px 70px -20px rgba(40,33,25,.45) → approximate (blur/2)
     static let window     = ShadowSpec(color: Color(hex: "282119", opacity: 0.45), radius: 35, x: 0, y: 24)
     static let sheet      = ShadowSpec(color: Color(hex: "282119", opacity: 0.40), radius: 25, x: 0, y: 20)
     static let homePanel  = ShadowSpec(color: Color(hex: "282119", opacity: 0.34), radius: 20, x: 0, y: 14)

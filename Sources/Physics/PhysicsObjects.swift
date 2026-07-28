@@ -17,31 +17,21 @@ private extension NSColor {
 
 // MARK: - Object spec
 
-/// A single stage object: its physics footprint plus a factory for its
-/// vector-ish visual (an `SKNode` whose children are centered on the origin).
 struct ObjectSpec {
     let name: String
     let size: CGSize
-    /// true → circular collision body; false → rectangular body.
     let round: Bool
     let makeVisual: () -> SKNode
-    /// true → on each drop, a 67% chance the object locks upright (falls level,
-    /// no spin) so it lands readable; the other 33% it tumbles like the rest.
-    /// Used for the iMessage bubble ("you need to hear this").
+    /// Upright bias keeps the message bubble readable while preserving occasional tumbling.
     var uprightBias: Bool = false
 }
 
-/// Builds the 14 stage objects and their SpriteKit bodies.
-/// Visuals are composed from `SKShapeNode`/`SKLabelNode` children — approximations
-/// of the CSS prototype, matching size, shape category, and dominant color.
 enum PhysicsObjects {
 
-    // Body tuning (README engine settings)
     static let restitution: CGFloat = 0.52
     static let friction: CGFloat = 0.35
-    static let linearDamping: CGFloat = 0.02   // ~ air friction 0.008 feel
+    static let linearDamping: CGFloat = 0.02
 
-    /// Stable spawn order — also the order `popEveryOther` walks.
     static var all: [ObjectSpec] {
         [
             ObjectSpec(name: "vinyl",     size: CGSize(width: 98, height: 98),  round: true,  makeVisual: vinyl),
@@ -63,7 +53,6 @@ enum PhysicsObjects {
 
     // MARK: Node factory
 
-    /// Wraps a spec's visual in a container carrying the physics body.
     static func makeNode(_ spec: ObjectSpec) -> SKNode {
         let container = SKNode()
         container.name = spec.name
@@ -78,7 +67,7 @@ enum PhysicsObjects {
         body.restitution = restitution
         body.friction = friction
         body.linearDamping = linearDamping
-        body.allowsRotation = true   // finalized per-drop in StageScene.drop
+        body.allowsRotation = true
         container.physicsBody = body
         return container
     }
@@ -126,7 +115,6 @@ enum PhysicsObjects {
     private static func cd() -> SKNode {
         let g = SKNode()
         g.addChild(disc(40, color: NSColor(hexString: "DFE4EE")))
-        // iridescent hint: faint tinted arcs
         g.addChild(disc(34, color: .clear, stroke: NSColor(hexString: "C6B6F0", alpha: 0.5), lineW: 4))
         g.addChild(disc(26, color: .clear, stroke: NSColor(hexString: "B6D6E8", alpha: 0.5), lineW: 4))
         g.addChild(disc(12, color: .white))
@@ -187,16 +175,13 @@ enum PhysicsObjects {
     }
 
     private static func note() -> SKNode {
-        // Eighth note: tilted oval head, stem off the head's right edge, curved flag.
         let g = SKNode()
         let ink = NSColor(hexString: "37333C")
 
-        // Stem — rises from the right side of the head.
         let stem = roundedRect(CGSize(width: 4.5, height: 48), radius: 2.2, color: ink)
         stem.position = CGPoint(x: 4, y: 4)
         g.addChild(stem)
 
-        // Flag — curved hook off the top of the stem.
         let flag = CGMutablePath()
         flag.move(to: CGPoint(x: 6, y: 28))
         flag.addQuadCurve(to: CGPoint(x: 18, y: 2), control: CGPoint(x: 25, y: 23))
@@ -204,7 +189,6 @@ enum PhysicsObjects {
         flag.closeSubpath()
         g.addChild(shape(flag, fill: ink))
 
-        // Note head — tilted filled oval at the lower left, connected to the stem base.
         let head = SKShapeNode(ellipseOf: CGSize(width: 22, height: 15))
         head.fillColor = ink
         head.strokeColor = .clear
@@ -229,7 +213,6 @@ enum PhysicsObjects {
 
     private static func pick() -> SKNode {
         let g = SKNode()
-        // teal gradient approximated with a solid mid-tone
         g.addChild(shape(pickPath(w: 50, h: 56), fill: NSColor(hexString: "64B7A3")))
         return g
     }
@@ -237,7 +220,6 @@ enum PhysicsObjects {
     private static func ticket() -> SKNode {
         let g = SKNode()
         g.addChild(roundedRect(CGSize(width: 118, height: 56), radius: 5, color: NSColor(hexString: "F0E3C4")))
-        // perforated/torn-edge notches just inside all four edges
         let notchColor = NSColor(hexString: "E6D9B8")
         let halfW: CGFloat = 59, halfH: CGFloat = 28, inset: CGFloat = 4
         let cols = 8, rows = 3
@@ -259,7 +241,6 @@ enum PhysicsObjects {
                 g.addChild(dot)
             }
         }
-        // dashed tear line
         let dash = CGMutablePath()
         dash.move(to: CGPoint(x: 18, y: 26)); dash.addLine(to: CGPoint(x: 18, y: -26))
         let tear = SKShapeNode(path: dash.copy(dashingWithPhase: 0, lengths: [3, 3]))
@@ -294,7 +275,6 @@ enum PhysicsObjects {
     private static func imessage() -> SKNode {
         let g = SKNode()
         g.addChild(roundedRect(CGSize(width: 196, height: 46), radius: 23, color: NSColor(hexString: "1B8DFF")))
-        // tail hooking off bottom-right
         let tail = CGMutablePath()
         tail.move(to: CGPoint(x: 78, y: -14))
         tail.addLine(to: CGPoint(x: 96, y: -23))
@@ -313,12 +293,10 @@ enum PhysicsObjects {
 
     private static func jerry() -> SKNode {
         let g = SKNode()
-        let target: CGFloat = 96  // visible head size
+        let target: CGFloat = 96
 
         if let img = NSImage(named: "JerryGarcia") {
-            // Transparent head cutout — the PNG's own alpha, NO circle / white ring / sticker bg.
-            // Crop to the solid-head bounding box (normalized, origin bottom-left) so the head
-            // fills the object instead of floating in transparent padding.
+            // Crop transparent PNG padding so the head fills its physics object without a synthetic background.
             let headRect = CGRect(x: 0.1279, y: 0.3060, width: 0.7188, height: 0.4922)
             let tex = SKTexture(rect: headRect, in: SKTexture(image: img))
             let s = tex.size()
@@ -329,7 +307,6 @@ enum PhysicsObjects {
             return g
         }
 
-        // Fallback — tie-dye radial-gradient disc + white ring (asset unavailable).
         let bands: [(CGFloat, NSColor)] = [
             (48, NSColor(hexString: "C84AA0")),
             (40, NSColor(hexString: "E8663F")),
@@ -377,7 +354,7 @@ enum PhysicsObjects {
 
     private static func pickPath(w: CGFloat, h: CGFloat) -> CGPath {
         let p = CGMutablePath()
-        p.move(to: CGPoint(x: 0, y: -h / 2)) // bottom point
+        p.move(to: CGPoint(x: 0, y: -h / 2))
         p.addQuadCurve(to: CGPoint(x: -w / 2, y: h * 0.22), control: CGPoint(x: -w * 0.5, y: -h * 0.22))
         p.addQuadCurve(to: CGPoint(x: 0, y: h / 2), control: CGPoint(x: -w * 0.4, y: h * 0.55))
         p.addQuadCurve(to: CGPoint(x: w / 2, y: h * 0.22), control: CGPoint(x: w * 0.4, y: h * 0.55))

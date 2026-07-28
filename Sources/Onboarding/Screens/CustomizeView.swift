@@ -1,9 +1,6 @@
 import SwiftUI
 
 // MARK: - Customize (step 6)
-//
-// Fills from the top with a SheetFooter. Names the playlist and sets a cover
-// before anything is written to Spotify.
 
 struct CustomizeView: View {
     @Environment(OnboardingState.self) private var state
@@ -13,7 +10,6 @@ struct CustomizeView: View {
 
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                // Result pill (inline)
                 HStack(spacing: 8) {
                     Circle()
                         .fill(Palette.success)
@@ -40,9 +36,7 @@ struct CustomizeView: View {
                     .foregroundStyle(Palette.body)
                     .padding(.top, 7)
 
-                // Cover (left, fixed) + fields (right, flex), 20pt gap
                 HStack(alignment: .top, spacing: 20) {
-                    // Cover column
                     VStack(spacing: 10) {
                         StripeCover(size: 104)
                             .overlay(
@@ -53,14 +47,11 @@ struct CustomizeView: View {
                             )
                             .shadowSpec(Shadows.coverThumb)
                         LinkButton(title: "Use your own", size: 12) {
-                            // Stub: no-op for now.
-                            // Production: NSOpenPanel restricted to JPEG, encoded as
-                            // base64 JPEG ≤ 256KB for Spotify's ugc-image-upload.
+                            // Spotify cover upload requires a JPEG encoded to base64 at no more than 256 KB.
                         }
                     }
                     .frame(width: 104)
 
-                    // Fields column
                     VStack(spacing: 14) {
                         LabeledField(label: "PLAYLIST NAME", text: $state.name)
                         LabeledField(label: "DESCRIPTION", text: $state.desc, fontSize: 13.5, weight: 400)

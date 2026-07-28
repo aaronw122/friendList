@@ -1,13 +1,11 @@
 import Foundation
 import SQLite3
 
-/// SQLite value binding for a parameterized query.
 enum SQLiteBind {
     case int(Int64)
     case text(String)
 }
 
-/// One result row — thin column accessors over the live statement pointer.
 struct SQLiteRow {
     let stmt: OpaquePointer
 
@@ -40,14 +38,11 @@ enum SQLiteError: LocalizedError {
     }
 }
 
-/// Minimal read-only SQLite handle. `chat.db` is a live WAL database, so:
-/// - open `SQLITE_OPEN_READONLY` (never the immutable flag — it hides new rows),
-/// - use a **fresh connection per logical operation** (don't cache the handle),
-/// - set a busy timeout so a concurrent Messages writer doesn't error us out.
+/// chat.db is live WAL: open read-only without immutable, use fresh connections, and tolerate concurrent writers.
 final class SQLiteReadOnly {
     private var db: OpaquePointer?
 
-    // SQLite wants a destructor for TRANSIENT text binds so it copies the bytes.
+    // SQLITE_TRANSIENT makes SQLite copy bound text before Swift releases its bytes.
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     init(path: String) throws {
@@ -65,7 +60,6 @@ final class SQLiteReadOnly {
         if db != nil { sqlite3_close(db) }
     }
 
-    /// Run `sql`, invoking `each` for every result row. Binds are 1-indexed in order.
     func query(_ sql: String, _ binds: [SQLiteBind] = [], each: (SQLiteRow) -> Void) throws {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {

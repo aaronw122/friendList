@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Step 0 — Home steady state. Renders directly on the physics stage
-/// (not inside the sheet) as a centered floating panel near the top.
 struct HomeView: View {
     @Environment(OnboardingState.self) private var state
     @Environment(\.physicsBridge) private var physics

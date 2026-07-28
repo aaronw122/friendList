@@ -1,9 +1,7 @@
 import Foundation
 import Security
 
-/// Tiny Keychain wrapper for the rotating refresh token and the client id.
-/// Accessibility is `AfterFirstUnlock` so a background refresh works without an
-/// interactive unlock. Writes are delete-then-add so they're idempotent.
+/// AfterFirstUnlock permits background refresh; delete-then-add makes Keychain writes idempotent.
 enum Keychain {
     static let service = "com.friendlist.app"
 
@@ -50,8 +48,7 @@ enum Keychain {
         return status == errSecSuccess || status == errSecItemNotFound
     }
 
-    /// Client-id change invalidates the stored tokens — clear them so we force
-    /// a fresh authorization against the new app.
+    /// A client-ID change requires fresh authorization, so its stored tokens are invalid.
     static func clearTokens() {
         delete(account: Account.refreshToken)
     }

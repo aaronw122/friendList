@@ -1,9 +1,5 @@
 import SwiftUI
 
-/// Step 3 — Pick a group chat. Renders in a 600pt-wide centered column on the
-/// plain gradient (no white sheet). Full Disk Access is handled upstream on the
-/// Permissions step, so this shows a search field + a chat list that fills the
-/// available height and scrolls.
 struct PickChatView: View {
     @Environment(OnboardingState.self) private var state
 
@@ -11,7 +7,6 @@ struct PickChatView: View {
         @Bindable var state = state
 
         VStack(spacing: 0) {
-            // Fixed top block: heading, subhead, (search).
             VStack(alignment: .leading, spacing: 0) {
                 Text("Pick a group chat")
                     .font(UIFont2.ui(26, 800))
@@ -32,7 +27,6 @@ struct PickChatView: View {
             .padding(.top, SheetLayout.topInset)
 
             if state.access {
-                // Flexible scrolling list — grows to ~5pt above the footer.
                 chatList
                     .padding(.horizontal, SheetLayout.hInset)
                     .padding(.top, 12)

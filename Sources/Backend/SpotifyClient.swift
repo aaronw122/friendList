@@ -1,10 +1,6 @@
 import Foundation
 
-/// Thin Spotify Web API client. Endpoints are the current (post-Feb-2026) ones:
-/// create = `POST /v1/me/playlists`, add = `POST /v1/playlists/{id}/items` in
-/// batches of ≤100 URIs. The add path falls back to the legacy `/tracks` on a 404,
-/// since the `/tracks`→`/items` rename is the single external claim the whole
-/// feature rests on — cheap insurance if a given account is still on the old path.
+/// Uses post-Feb-2026 /items endpoints in ≤100-URI batches, falling back to legacy /tracks on 404.
 struct SpotifyClient {
     let tokenProvider: () async throws -> String
     private let base = URL(string: "https://api.spotify.com/v1")!
@@ -29,7 +25,6 @@ struct SpotifyClient {
         return try await request("POST", "/me/playlists", body: body, decode: CreatedPlaylist.self)
     }
 
-    /// Append up to 100 URIs. Tries `/items`, falls back to `/tracks` on 404.
     func addItems(playlistID: String, uris: [String]) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["uris": uris])
         do {
@@ -51,7 +46,6 @@ struct SpotifyClient {
         _ = try await send(method, path, body: body)
     }
 
-    /// Send with bearer auth, honoring 429 `Retry-After` and retrying 5xx briefly.
     private func send(_ method: String, _ path: String, body: Data?, attempt: Int = 0) async throws -> Data {
         let token = try await tokenProvider()
         var req = URLRequest(url: base.appendingPathComponent(String(path.dropFirst())))
@@ -69,15 +63,12 @@ struct SpotifyClient {
         case 200..<300:
             return data
         case 429 where attempt < 3:
-            // Rate-limited means the request did NOT apply, so retrying any method
-            // is safe.
+            // A 429 means the request was not applied, so retrying any method is safe.
             let retry = Double(http.value(forHTTPHeaderField: "Retry-After") ?? "1") ?? 1
             try await Task.sleep(nanoseconds: UInt64((retry + 0.2) * 1_000_000_000))
             return try await send(method, path, body: body, attempt: attempt + 1)
         case 500..<600 where attempt < 3 && method == "GET":
-            // Only retry idempotent GETs on 5xx. A POST (create playlist / add items)
-            // may have applied server-side before the error, so a blind retry would
-            // duplicate playlists or tracks.
+            // Retry only GET on 5xx; replaying a possibly applied POST could duplicate playlists or tracks.
             try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt)) * 1_000_000_000))
             return try await send(method, path, body: body, attempt: attempt + 1)
         default:

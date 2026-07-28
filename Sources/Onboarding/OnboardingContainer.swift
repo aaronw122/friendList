@@ -62,6 +62,7 @@ struct OnboardingContainer: View {
         .frame(width: Geometry.contentWidth, height: Geometry.contentHeight)
         .task { await state.restoreSpotifySession() }
         .environment(state)
+        .environmentObject(state.syncStatus)
         .environment(\.physicsBridge, physics)
         .onChange(of: state.step) { _, newStep in beginTransition(to: newStep) }
         .simultaneousGesture(

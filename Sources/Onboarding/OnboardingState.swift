@@ -23,6 +23,7 @@ struct Playlist: Identifiable, Hashable {
 
 // MARK: - Onboarding state machine
 
+@MainActor
 @Observable
 final class OnboardingState {
     var step: Int = 1
@@ -63,6 +64,9 @@ final class OnboardingState {
     @ObservationIgnored let messages: MessagesReading
     @ObservationIgnored let spotify: SpotifyProviding
     @ObservationIgnored var persistence: PersistenceProviding
+    // Shared sync status the Home UI observes; PlaylistSync is its sole writer.
+    @ObservationIgnored let syncStatus = SyncStatus()
+    @ObservationIgnored private var launchSyncStarted = false
     @ObservationIgnored private var accessPollTask: Task<Void, Never>?
     @ObservationIgnored private var createInFlight = false
     @ObservationIgnored private var chatsLoading = false
@@ -88,10 +92,7 @@ final class OnboardingState {
             self.spotify = isPreview ? FakeSpotify() : SpotifyService()
         }
         self.persistence = persistence
-        self.lists = (persistence.loadPlaylists() ?? []).map {
-            Playlist(name: $0.name, songCount: $0.songCount, chatName: $0.chatName,
-                     externalURL: $0.externalURL, spotifyID: $0.spotifyID, chatGUID: $0.chatGUID)
-        }
+        self.lists = Self.mapped(persistence.loadPlaylists() ?? [])
         if !isPreview && persistence.didOnboard && !lists.isEmpty {
             step = 0
             sheetIn = false
@@ -307,6 +308,8 @@ final class OnboardingState {
         connectError = nil
         do {
             let name = try await spotify.connect(clientID: id)
+            // Stamp the 6-month refresh-token clock at consent (and each reconnect); it drives the pre-expiry nudge.
+            persistence.authorizationDate = Date()
             spotifyDisplayName = name
             connected = true
             connecting = false
@@ -349,6 +352,66 @@ final class OnboardingState {
             } else {
                 createLabel = "Couldn't finish: \(error.localizedDescription)"
             }
+        }
+    }
+
+    // MARK: - Background sync
+
+    /// The launch-sync seam the app entry (normal and headless) calls once on startup.
+    /// Runs a non-blocking background sync only when onboarded with ≥1 playlist, then refreshes
+    /// Home counts. A no-op otherwise; safe to call repeatedly and never blocks startup.
+    @MainActor
+    func startLaunchSyncIfOnboarded() {
+        guard !launchSyncStarted else { return }
+        launchSyncStarted = true
+        guard persistence.didOnboard, !lists.isEmpty else { return }
+        let sync = PlaylistSync(messages: messages, spotify: spotify,
+                                persistence: persistence, status: syncStatus)
+        // Detached so the chat scan hops off the main thread and app startup isn't blocked.
+        Task.detached(priority: .background) { [weak self] in
+            await sync.syncAll(trigger: .background)
+            await self?.reloadLists()
+        }
+    }
+
+    /// "Sync now": user-initiated run that bounded-waits on the lock and reports already-running
+    /// rather than silently skipping. Fire-and-forget; the UI observes syncStatus.isSyncing.
+    @MainActor
+    func syncNow() {
+        let sync = PlaylistSync(messages: messages, spotify: spotify,
+                                persistence: persistence, status: syncStatus)
+        Task.detached(priority: .userInitiated) { [weak self] in
+            await sync.syncAll(trigger: .userInitiated)
+            await self?.reloadLists()
+        }
+    }
+
+    /// Re-read the playlists file after a run so Home counts update in place.
+    @MainActor
+    func reloadLists() {
+        lists = Self.mapped(persistence.loadPlaylists() ?? [])
+    }
+
+    /// Roughly two weeks before the 6-month refresh-token anniversary, nudge a reconnect while the
+    /// token still works; after the anniversary the hard needsReconnect(.expired) state takes over.
+    func reconnectNudgeActive(now: Date = Date()) -> Bool {
+        guard let authorized = persistence.authorizationDate else { return false }
+        let cal = Calendar.current
+        guard let anniversary = cal.date(byAdding: .month, value: 6, to: authorized),
+              let windowStart = cal.date(byAdding: .day, value: -14, to: anniversary) else { return false }
+        return now >= windowStart && now < anniversary
+    }
+
+    /// Route the Home reconnect affordance back through the existing consent flow (which re-stamps the date).
+    func beginReconnect() {
+        connected = false
+        go(to: 5)
+    }
+
+    private static func mapped(_ saved: [SavedPlaylist]) -> [Playlist] {
+        saved.map {
+            Playlist(name: $0.name, songCount: $0.songCount, chatName: $0.chatName,
+                     externalURL: $0.externalURL, spotifyID: $0.spotifyID, chatGUID: $0.chatGUID)
         }
     }
 

@@ -1,29 +1,7 @@
 import XCTest
 @testable import FriendList
 
-final class PersistenceStoreTests: XCTestCase {
-    private var dir: URL!
-    private var legacy: UserDefaults!
-    private var suiteName: String!
-
-    override func setUp() {
-        super.setUp()
-        dir = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("friendlist-store-\(UUID().uuidString)", isDirectory: true)
-        suiteName = "friendlist.tests.\(UUID().uuidString)"
-        legacy = UserDefaults(suiteName: suiteName)
-        Persistence.storeDirectoryOverride = dir
-        Persistence.legacyDefaults = legacy
-    }
-
-    override func tearDown() {
-        Persistence.storeDirectoryOverride = nil
-        Persistence.legacyDefaults = .standard
-        legacy.removePersistentDomain(forName: suiteName)
-        try? FileManager.default.removeItem(at: dir)
-        super.tearDown()
-    }
-
+final class PersistenceStoreTests: PersistenceTestCase {
     // MARK: seen isolation + union
 
     func testSeenIsolatedBySpotifyID() {

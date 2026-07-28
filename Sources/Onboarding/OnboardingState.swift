@@ -320,7 +320,7 @@ final class OnboardingState {
         case 5: go(to: 3)                 // SpotifyKeys → Pick chat (skip the auto-
                                           // advancing Scanning step, which would
                                           // otherwise re-scan and bounce us forward)
-        case 2: go(to: lists.isEmpty ? 1 : 0)  // Pick chat → Welcome on first run;
+        case 3: go(to: lists.isEmpty ? 2 : 0)  // Pick chat → Permissions on first run;
                                           // → Home when playlists already exist (the
                                           // user arrived here via "Create a new one").
         case 0, 1: break                  // no back from Home / Welcome

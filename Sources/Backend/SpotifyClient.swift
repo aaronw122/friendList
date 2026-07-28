@@ -1,8 +1,22 @@
 import Foundation
 
+/// Seam over URLSession so tests can drive HTTP status/body without the network.
+protocol SpotifyHTTP: Sendable {
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
+}
+
+struct URLSessionHTTP: SpotifyHTTP {
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw SpotifyError.http(-1, "no response") }
+        return (data, http)
+    }
+}
+
 /// Uses post-Feb-2026 /items endpoints in ≤100-URI batches, falling back to legacy /tracks on 404.
 struct SpotifyClient {
     let tokenProvider: () async throws -> String
+    var http: SpotifyHTTP = URLSessionHTTP()
     private let base = URL(string: "https://api.spotify.com/v1")!
 
     struct Me: Decodable { let id: String; let display_name: String? }
@@ -28,10 +42,23 @@ struct SpotifyClient {
     func addItems(playlistID: String, uris: [String]) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["uris": uris])
         do {
-            try await requestVoid("POST", "/playlists/\(playlistID)/items", body: body)
-        } catch let SpotifyError.http(code, _) where code == 404 {
-            try await requestVoid("POST", "/playlists/\(playlistID)/tracks", body: body)
+            do {
+                try await requestVoid("POST", "/playlists/\(playlistID)/items", body: body)
+            } catch let SpotifyError.http(code, _) where code == 404 {
+                try await requestVoid("POST", "/playlists/\(playlistID)/tracks", body: body)
+            }
+        } catch let SpotifyError.http(code, responseBody) where code == 403 {
+            throw Self.classify403(responseBody)
         }
+    }
+
+    /// We request only playlist-modify-private, so a public-playlist add and a full playlist both 403; the body tells them apart.
+    static func classify403(_ body: String) -> SpotifyError {
+        let lower = body.lowercased()
+        if lower.contains("10000") || lower.contains("maximum") || lower.contains("exceed") || lower.contains("add more than") {
+            return .playlistFull
+        }
+        return .playlistPublic
     }
 
     // MARK: - Transport
@@ -56,15 +83,14 @@ struct SpotifyClient {
             req.httpBody = body
         }
 
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else { throw SpotifyError.http(-1, "no response") }
+        let (data, httpResponse) = try await http.data(for: req)
 
-        switch http.statusCode {
+        switch httpResponse.statusCode {
         case 200..<300:
             return data
         case 429 where attempt < 3:
             // A 429 means the request was not applied, so retrying any method is safe.
-            let retry = Double(http.value(forHTTPHeaderField: "Retry-After") ?? "1") ?? 1
+            let retry = Double(httpResponse.value(forHTTPHeaderField: "Retry-After") ?? "1") ?? 1
             try await Task.sleep(nanoseconds: UInt64((retry + 0.2) * 1_000_000_000))
             return try await send(method, path, body: body, attempt: attempt + 1)
         case 500..<600 where attempt < 3 && method == "GET":
@@ -72,7 +98,7 @@ struct SpotifyClient {
             try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt)) * 1_000_000_000))
             return try await send(method, path, body: body, attempt: attempt + 1)
         default:
-            throw SpotifyError.http(http.statusCode, String(decoding: data, as: UTF8.self))
+            throw SpotifyError.http(httpResponse.statusCode, String(decoding: data, as: UTF8.self))
         }
     }
 }

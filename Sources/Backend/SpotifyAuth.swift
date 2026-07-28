@@ -1,6 +1,11 @@
 import Foundation
 import AppKit
 
+/// Why a stored authorization can no longer produce tokens; drives the reconnect path.
+enum ReconnectReason: Sendable, Equatable {
+    case expired
+}
+
 enum SpotifyError: LocalizedError {
     case stateMismatch
     case authDenied(String)
@@ -9,6 +14,9 @@ enum SpotifyError: LocalizedError {
     case decoding(String)
     case notAuthenticated
     case sessionExpired
+    case needsReconnect(reason: ReconnectReason)
+    case playlistPublic
+    case playlistFull
 
     var errorDescription: String? {
         switch self {
@@ -19,16 +27,19 @@ enum SpotifyError: LocalizedError {
         case .decoding(let m):    return "Unexpected Spotify response: \(m)"
         case .notAuthenticated:   return "Not connected to Spotify."
         case .sessionExpired:     return "Your Spotify session expired — please authorize again."
+        case .needsReconnect:     return "Your Spotify authorization expired — please reconnect."
+        case .playlistPublic:     return "This playlist is public; make it private to keep syncing."
+        case .playlistFull:       return "This playlist is full (Spotify's 10,000-track limit)."
         }
     }
 
     var isAuthenticationFailure: Bool {
         switch self {
-        case .noRefreshToken, .notAuthenticated, .authDenied, .sessionExpired:
+        case .noRefreshToken, .notAuthenticated, .authDenied, .sessionExpired, .needsReconnect:
             return true
         case .http(let code, _):
             return code == 401 || code == 403
-        case .stateMismatch, .decoding:
+        case .stateMismatch, .decoding, .playlistPublic, .playlistFull:
             return false
         }
     }
@@ -43,6 +54,9 @@ extension Error {
 /// Serializes rotating-token refreshes and retains the stored token when Spotify omits a replacement.
 actor SpotifyAuth {
     private let clientID: String
+    private let http: SpotifyHTTP
+    private let loadRefreshToken: @Sendable () -> String?
+    private let saveRefreshToken: @Sendable (String) -> Void
     private var accessToken: String?
     private var expiresAt: Date = .distantPast
     private var refreshInFlight: Task<Void, Error>?
@@ -50,8 +64,14 @@ actor SpotifyAuth {
     private let tokenURL = URL(string: "https://accounts.spotify.com/api/token")!
     private let authorizeBase = "https://accounts.spotify.com/authorize"
 
-    init(clientID: String) {
+    init(clientID: String,
+         http: SpotifyHTTP = URLSessionHTTP(),
+         loadRefreshToken: @escaping @Sendable () -> String? = { Keychain.get(account: Keychain.Account.refreshToken) },
+         saveRefreshToken: @escaping @Sendable (String) -> Void = { Keychain.set($0, account: Keychain.Account.refreshToken) }) {
         self.clientID = clientID
+        self.http = http
+        self.loadRefreshToken = loadRefreshToken
+        self.saveRefreshToken = saveRefreshToken
     }
 
     // MARK: Interactive authorization (PKCE + loopback)
@@ -129,12 +149,12 @@ actor SpotifyAuth {
         let token = try await postToken(form)
         apply(token)
         if let rt = token.refresh_token, !rt.isEmpty {
-            Keychain.set(rt, account: Keychain.Account.refreshToken)
+            saveRefreshToken(rt)
         }
     }
 
     private func performRefresh() async throws {
-        guard let stored = Keychain.get(account: Keychain.Account.refreshToken), !stored.isEmpty else {
+        guard let stored = loadRefreshToken(), !stored.isEmpty else {
             throw SpotifyError.noRefreshToken
         }
         let form: [String: String] = [
@@ -145,13 +165,17 @@ actor SpotifyAuth {
         let token: TokenResponse
         do {
             token = try await postToken(form)
-        } catch let SpotifyError.http(code, _) where code == 400 || code == 401 {
+        } catch let SpotifyError.http(code, body) where code == 400 || code == 401 {
+            // invalid_grant on refresh means the 6-month refresh-token lifetime lapsed — a hard reconnect, not a transient failure.
+            if code == 400, body.lowercased().contains("invalid_grant") {
+                throw SpotifyError.needsReconnect(reason: .expired)
+            }
             throw SpotifyError.sessionExpired
         }
         apply(token)
         // Spotify may omit refresh_token; replacing the stored token only when present prevents permanent auth loss.
         if let rt = token.refresh_token, !rt.isEmpty {
-            Keychain.set(rt, account: Keychain.Account.refreshToken)
+            saveRefreshToken(rt)
         }
     }
 
@@ -177,12 +201,9 @@ actor SpotifyAuth {
             .joined(separator: "&")
             .data(using: .utf8)
 
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else {
-            throw SpotifyError.http(-1, "no response")
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            throw SpotifyError.http(http.statusCode, String(decoding: data, as: UTF8.self))
+        let (data, response) = try await http.data(for: req)
+        guard (200..<300).contains(response.statusCode) else {
+            throw SpotifyError.http(response.statusCode, String(decoding: data, as: UTF8.self))
         }
         do { return try JSONDecoder().decode(TokenResponse.self, from: data) }
         catch { throw SpotifyError.decoding(error.localizedDescription) }

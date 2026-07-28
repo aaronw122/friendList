@@ -8,6 +8,7 @@ enum SpotifyError: LocalizedError {
     case http(Int, String)
     case decoding(String)
     case notAuthenticated
+    case sessionExpired
 
     var errorDescription: String? {
         switch self {
@@ -17,7 +18,25 @@ enum SpotifyError: LocalizedError {
         case .http(let c, let m): return "Spotify API error \(c): \(m)"
         case .decoding(let m):    return "Unexpected Spotify response: \(m)"
         case .notAuthenticated:   return "Not connected to Spotify."
+        case .sessionExpired:     return "Your Spotify session expired — please authorize again."
         }
+    }
+
+    var isAuthenticationFailure: Bool {
+        switch self {
+        case .noRefreshToken, .notAuthenticated, .authDenied, .sessionExpired:
+            return true
+        case .http(let code, _):
+            return code == 401 || code == 403
+        case .stateMismatch, .decoding:
+            return false
+        }
+    }
+}
+
+extension Error {
+    var isSpotifyAuthenticationFailure: Bool {
+        (self as? SpotifyError)?.isAuthenticationFailure == true
     }
 }
 
@@ -123,7 +142,12 @@ actor SpotifyAuth {
             "refresh_token": stored,
             "client_id": clientID,
         ]
-        let token = try await postToken(form)
+        let token: TokenResponse
+        do {
+            token = try await postToken(form)
+        } catch let SpotifyError.http(code, _) where code == 400 || code == 401 {
+            throw SpotifyError.sessionExpired
+        }
         apply(token)
         // Spotify may omit refresh_token; replacing the stored token only when present prevents permanent auth loss.
         if let rt = token.refresh_token, !rt.isEmpty {

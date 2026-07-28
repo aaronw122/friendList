@@ -40,8 +40,23 @@ targets:
         ENABLE_PREVIEWS: YES
         COMBINE_HIDPI_IMAGES: YES
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
+      configs:
+        Debug:
+          # Self-signed certificates have no Team ID, so hosted tests require Debug library validation off.
+          ENABLE_HARDENED_RUNTIME: NO
     entitlements:
       path: App/FriendList.entitlements
       properties:
         com.apple.security.app-sandbox: false
         com.apple.security.network.client: true
+  FriendListTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: FriendList
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.friendlist.tests
+        GENERATE_INFOPLIST_FILE: YES

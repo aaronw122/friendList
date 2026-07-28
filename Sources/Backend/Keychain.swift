@@ -4,6 +4,9 @@ import Security
 /// AfterFirstUnlock permits background refresh; delete-then-add makes Keychain writes idempotent.
 enum Keychain {
     static let service = "com.friendlist.app"
+    private static var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
 
     enum Account {
         static let refreshToken = "spotify.refreshToken"
@@ -12,6 +15,7 @@ enum Keychain {
 
     @discardableResult
     static func set(_ value: String, account: String) -> Bool {
+        guard !isRunningTests else { return false }
         delete(account: account)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -24,6 +28,7 @@ enum Keychain {
     }
 
     static func get(account: String) -> String? {
+        guard !isRunningTests else { return nil }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -39,6 +44,7 @@ enum Keychain {
 
     @discardableResult
     static func delete(account: String) -> Bool {
+        guard !isRunningTests else { return false }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

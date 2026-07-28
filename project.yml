@@ -31,6 +31,12 @@ targets:
     sources:
       - path: Sources
       - path: App
+      # Bundled LaunchAgent for the scheduled SMAppService.agent (08:00/12:00/20:00 --sync run).
+      - path: LaunchAgents/com.friendlist.app.sync.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.friendlist.app

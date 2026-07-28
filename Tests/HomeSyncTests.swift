@@ -2,28 +2,14 @@ import XCTest
 @testable import FriendList
 
 @MainActor
-final class HomeSyncTests: XCTestCase {
-    private var dir: URL!
-    private var legacy: UserDefaults!
-    private var suiteName: String!
-
+final class HomeSyncTests: PersistenceTestCase {
     override func setUp() {
         super.setUp()
-        dir = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("friendlist-home-\(UUID().uuidString)", isDirectory: true)
-        suiteName = "friendlist.hometests.\(UUID().uuidString)"
-        legacy = UserDefaults(suiteName: suiteName)
-        Persistence.storeDirectoryOverride = dir
-        Persistence.legacyDefaults = legacy
         Persistence.didOnboard = false
     }
 
     override func tearDown() {
-        Persistence.storeDirectoryOverride = nil
-        Persistence.legacyDefaults = .standard
         Persistence.didOnboard = false
-        legacy.removePersistentDomain(forName: suiteName)
-        try? FileManager.default.removeItem(at: dir)
         super.tearDown()
     }
 
@@ -32,14 +18,14 @@ final class HomeSyncTests: XCTestCase {
     func testLaunchSyncRunsWhenOnboardedWithPlaylists() async {
         seedPlaylist(spotifyID: "P", chatGUID: "G")
         Persistence.didOnboard = true
-        let spotify = AppendRecordingSpotify()
+        let spotify = SpotifyFake()
         let state = makeState(messages: MessagesFake(uris: [uri(0), uri(1)]), spotify: spotify)
         state.reloadLists()
 
         state.startLaunchSyncIfOnboarded()
         await waitUntil { state.syncStatus.lastSyncDate != nil }
 
-        let appended = await spotify.appended
+        let appended = spotify.appended
         XCTAssertEqual(appended.flatMap { $0 }, [uri(0), uri(1)])
         XCTAssertEqual(Persistence.seen(forSpotifyID: "P").count, 2)
         // Home counts refreshed in place from the store.
@@ -49,28 +35,28 @@ final class HomeSyncTests: XCTestCase {
     func testLaunchSyncNoOpWhenNotOnboarded() async {
         seedPlaylist(spotifyID: "P", chatGUID: "G")
         Persistence.didOnboard = false
-        let spotify = AppendRecordingSpotify()
+        let spotify = SpotifyFake()
         let state = makeState(messages: MessagesFake(uris: [uri(0)]), spotify: spotify)
         state.reloadLists()
 
         state.startLaunchSyncIfOnboarded()
         await settle()
 
-        let appended = await spotify.appended
+        let appended = spotify.appended
         XCTAssertNil(state.syncStatus.lastSyncDate)
         XCTAssertTrue(appended.isEmpty)
     }
 
     func testLaunchSyncNoOpWhenNoPlaylists() async {
         Persistence.didOnboard = true
-        let spotify = AppendRecordingSpotify()
+        let spotify = SpotifyFake()
         let state = makeState(messages: MessagesFake(uris: [uri(0)]), spotify: spotify)
         state.reloadLists()
 
         state.startLaunchSyncIfOnboarded()
         await settle()
 
-        let appended = await spotify.appended
+        let appended = spotify.appended
         XCTAssertTrue(state.lists.isEmpty)
         XCTAssertNil(state.syncStatus.lastSyncDate)
         XCTAssertTrue(appended.isEmpty)
@@ -79,23 +65,28 @@ final class HomeSyncTests: XCTestCase {
     func testLaunchSyncRunsOnlyOncePerLaunch() async {
         seedPlaylist(spotifyID: "P", chatGUID: "G")
         Persistence.didOnboard = true
-        let spotify = AppendRecordingSpotify()
-        let state = makeState(messages: MessagesFake(uris: [uri(0)]), spotify: spotify)
+        let spotify = SpotifyFake()
+        // Fresh unseen URI: a second run, if the gate let it fire, would scan + append it.
+        let messages = MessagesFake(uris: [uri(0), uri(1)])
+        let state = makeState(messages: messages, spotify: spotify)
         state.reloadLists()
 
         state.startLaunchSyncIfOnboarded()
         await waitUntil { state.syncStatus.lastSyncDate != nil }
+        // Pretend both URIs already synced so append-dedup alone can't mask a second run.
+        Persistence.recordSeen(spotifyID: "P", uris: [uri(0), uri(1)])
         state.startLaunchSyncIfOnboarded()  // guarded: must not fire a second run
         await settle()
 
-        let appended = await spotify.appended
-        XCTAssertEqual(appended.count, 1)
+        // The once-per-launch flag — not seen-dedup — must be what blocks the second run.
+        XCTAssertEqual(messages.scanCount, 1, "second launch call must not scan again")
+        XCTAssertEqual(spotify.appended.count, 1)
     }
 
     // MARK: pre-expiry reconnect nudge threshold
 
     func testReconnectNudgeFiresInsideTwoWeekWindowOnly() {
-        let state = makeState(messages: MessagesFake(uris: []), spotify: AppendRecordingSpotify())
+        let state = makeState(messages: MessagesFake(uris: []), spotify: SpotifyFake())
         let cal = Calendar.current
         let authorized = Date(timeIntervalSince1970: 1_700_000_000)
         state.persistence.authorizationDate = authorized
@@ -111,7 +102,7 @@ final class HomeSyncTests: XCTestCase {
     }
 
     func testReconnectNudgeInactiveWithoutAuthorizationDate() {
-        let state = makeState(messages: MessagesFake(uris: []), spotify: AppendRecordingSpotify())
+        let state = makeState(messages: MessagesFake(uris: []), spotify: SpotifyFake())
         state.persistence.authorizationDate = nil
         XCTAssertFalse(state.reconnectNudgeActive(now: Date()))
     }
@@ -140,32 +131,4 @@ final class HomeSyncTests: XCTestCase {
     // Give any detached no-op path a beat to prove it did NOT start a run.
     private func settle() async { try? await Task.sleep(nanoseconds: 300_000_000) }
 }
-
-// MARK: - Fakes
-
-private struct MessagesFake: MessagesReading {
-    var uris: [String]
-    func canRead() -> Bool { true }
-    func groupChats() throws -> [GroupChat] { [] }
-    func scan(chatGUID: String, progress: @escaping (ScanProgress) -> Void) throws -> ChatScan {
-        ChatScan(trackURIs: uris, youtubeCount: 0, messagesScanned: uris.count)
-    }
-}
-
-private actor AppendRecordingSpotify: SpotifyProviding {
-    private(set) var appended: [[String]] = []
-    func savedClientID() -> String? { nil }
-    func restoreSession() throws -> SpotifySession? { nil }
-    func connect(clientID: String) async throws -> String { "" }
-    func createPlaylist(name: String, description: String, trackURIs: [String],
-                        progress: @escaping @Sendable (Double, String) -> Void) async throws -> SpotifyPlaylistResult {
-        SpotifyPlaylistResult(id: "id", url: "", added: trackURIs.count)
-    }
-    func appendTracks(playlistID: String, trackURIs: [String], onBatchAdded: ([String]) -> Void) async throws -> Int {
-        for batch in trackURIs.chunked(100) {
-            onBatchAdded(batch)
-            appended.append(batch)
-        }
-        return trackURIs.count
-    }
-}
+// MessagesFake / SpotifyFake are shared — see TestSupport.swift.

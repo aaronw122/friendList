@@ -84,7 +84,7 @@ final class OnboardingStateTests: XCTestCase {
 
         await state.createPlaylist()
 
-        let request = await spotify.lastCreateRequest
+        let request = spotify.lastCreateRequest
         XCTAssertEqual(request?.uris, state.scannedTrackURIs)
         XCTAssertEqual(state.lists.last?.name, "Road trip")
         XCTAssertEqual(state.lists.last?.spotifyID, "playlist-id")
@@ -125,58 +125,4 @@ private final class PersistenceFake: PersistenceProviding {
     func acquireSyncLock(blocking: Bool) -> Bool { true }
     func releaseSyncLock() {}
 }
-
-private struct MessagesFake: MessagesReading {
-    func canRead() -> Bool { true }
-    func groupChats() throws -> [GroupChat] { [] }
-    func scan(chatGUID: String, progress: @escaping (ScanProgress) -> Void) throws -> ChatScan {
-        ChatScan(trackURIs: [], youtubeCount: 0, messagesScanned: 0)
-    }
-}
-
-private actor SpotifyFake: SpotifyProviding {
-    struct CreateRequest: Equatable {
-        let name: String
-        let description: String
-        let uris: [String]
-    }
-
-    let savedID: String?
-    let restored: SpotifySession?
-    let restoreError: Error?
-    let createError: Error?
-    private(set) var lastCreateRequest: CreateRequest?
-
-    init(savedID: String? = nil,
-         restored: SpotifySession? = nil,
-         restoreError: Error? = nil,
-         createError: Error? = nil) {
-        self.savedID = savedID
-        self.restored = restored
-        self.restoreError = restoreError
-        self.createError = createError
-    }
-
-    func savedClientID() -> String? { savedID }
-
-    func restoreSession() throws -> SpotifySession? {
-        if let restoreError { throw restoreError }
-        return restored
-    }
-
-    func connect(clientID: String) async throws -> String { "Connected User" }
-
-    func createPlaylist(name: String,
-                        description: String,
-                        trackURIs: [String],
-                        progress: @escaping @Sendable (Double, String) -> Void) async throws -> SpotifyPlaylistResult {
-        lastCreateRequest = CreateRequest(name: name, description: description, uris: trackURIs)
-        if let createError { throw createError }
-        progress(1, "Done")
-        return SpotifyPlaylistResult(id: "playlist-id", url: "https://open.spotify.com/playlist/id", added: trackURIs.count)
-    }
-    func appendTracks(playlistID: String, trackURIs: [String], onBatchAdded: ([String]) -> Void) async throws -> Int {
-        for batch in trackURIs.chunked(100) { onBatchAdded(batch) }
-        return trackURIs.count
-    }
-}
+// MessagesFake / SpotifyFake are shared — see TestSupport.swift.

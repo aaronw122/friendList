@@ -1,29 +1,7 @@
 import XCTest
 @testable import FriendList
 
-final class PlaylistSyncTests: XCTestCase {
-    private var dir: URL!
-    private var legacy: UserDefaults!
-    private var suiteName: String!
-
-    override func setUp() {
-        super.setUp()
-        dir = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("friendlist-sync-\(UUID().uuidString)", isDirectory: true)
-        suiteName = "friendlist.synctests.\(UUID().uuidString)"
-        legacy = UserDefaults(suiteName: suiteName)
-        Persistence.storeDirectoryOverride = dir
-        Persistence.legacyDefaults = legacy
-    }
-
-    override func tearDown() {
-        Persistence.storeDirectoryOverride = nil
-        Persistence.legacyDefaults = .standard
-        legacy.removePersistentDomain(forName: suiteName)
-        try? FileManager.default.removeItem(at: dir)
-        super.tearDown()
-    }
-
+final class PlaylistSyncTests: PersistenceTestCase {
     // MARK: new = scanned − seen, appended and recorded
 
     @MainActor
@@ -203,50 +181,7 @@ final class PlaylistSyncTests: XCTestCase {
     }
 }
 
-// MARK: - Fakes
-
-private struct MessagesFake: MessagesReading {
-    var uris: [String]
-    var readable = true
-    private let readFlag = ReadFlag()
-    var canReadCalled: Bool { readFlag.value }
-
-    func canRead() -> Bool { readFlag.value = true; return readable }
-    func groupChats() throws -> [GroupChat] { [] }
-    func scan(chatGUID: String, progress: @escaping (ScanProgress) -> Void) throws -> ChatScan {
-        ChatScan(trackURIs: uris, youtubeCount: 0, messagesScanned: uris.count)
-    }
-}
-
-private final class ReadFlag: @unchecked Sendable {
-    var value = false
-}
-
-private final class SpotifyFake: SpotifyProviding, @unchecked Sendable {
-    var failAfterBatches: Int?
-    var failure: Error = SpotifyError.http(500, "server error")
-    private(set) var appended: [[String]] = []
-
-    func savedClientID() async -> String? { nil }
-    func restoreSession() async throws -> SpotifySession? { nil }
-    func connect(clientID: String) async throws -> String { "" }
-    func createPlaylist(name: String, description: String, trackURIs: [String],
-                        progress: @escaping @Sendable (Double, String) -> Void) async throws -> SpotifyPlaylistResult {
-        SpotifyPlaylistResult(id: "id", url: "", added: trackURIs.count)
-    }
-    func appendTracks(playlistID: String, trackURIs: [String], onBatchAdded: ([String]) -> Void) async throws -> Int {
-        var added = 0
-        var landed = 0
-        for batch in trackURIs.chunked(100) {
-            if let cap = failAfterBatches, landed >= cap { throw failure }
-            onBatchAdded(batch)
-            appended.append(batch)
-            added += batch.count
-            landed += 1
-        }
-        return added
-    }
-}
+// MARK: - Fakes (MessagesFake / SpotifyFake are shared — see TestSupport.swift)
 
 // Always refuses the lock, so the run can't acquire it — simulates another active process.
 private struct BusyPersistence: PersistenceProviding {

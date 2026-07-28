@@ -239,6 +239,13 @@ final class OnboardingState {
     @MainActor
     func restoreSpotifySession() async {
         guard !connected else { return }
+
+        let restoration = await spotifyRestorationResult()
+        applySpotifyRestoration(restoration)
+    }
+
+    @MainActor
+    private func spotifyRestorationResult() async -> SpotifyRestoreResult {
         let task: Task<SpotifyRestoreResult, Never>
         if let restoreTask {
             task = restoreTask
@@ -255,7 +262,11 @@ final class OnboardingState {
             restoreTask = task
         }
 
-        let restoration = await task.value
+        return await task.value
+    }
+
+    @MainActor
+    private func applySpotifyRestoration(_ restoration: SpotifyRestoreResult) {
         clientId = restoration.clientID ?? ""
         guard !clientId.isEmpty else { return }
 

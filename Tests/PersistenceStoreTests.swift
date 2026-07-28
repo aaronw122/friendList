@@ -123,6 +123,26 @@ final class PersistenceStoreTests: XCTestCase {
         XCTAssertEqual(outer, true)
     }
 
+    // Holds the cross-process run lock across awaits with real thread hops (an actor hop
+    // and a detached-task release), the way the sync core will — no deadlock, no unlock
+    // from a non-owning context, correct data.
+    func testRunLockHeldAcrossAwaitsWithThreadHops() async {
+        XCTAssertTrue(Persistence.acquireSyncLock(blocking: false))
+
+        Persistence.recordSeen(spotifyID: "A", uris: ["u1"])
+
+        let hopper = LockHopper()
+        await hopper.recordSecond()
+        await Task.yield()
+
+        await Task.detached { Persistence.releaseSyncLock() }.value
+
+        XCTAssertEqual(Persistence.seen(forSpotifyID: "A"), ["u1", "u2"])
+
+        XCTAssertTrue(Persistence.acquireSyncLock(blocking: false), "lock fully released and reacquirable")
+        Persistence.releaseSyncLock()
+    }
+
     // MARK: helpers
 
     private func saved(spotifyID: String, chatGUID: String) -> SavedPlaylist {
@@ -134,4 +154,8 @@ final class PersistenceStoreTests: XCTestCase {
         legacy.set(try! JSONEncoder().encode(playlists), forKey: "friendlist.playlists")
         legacy.set(try! JSONEncoder().encode(seen), forKey: "friendlist.seen")
     }
+}
+
+private actor LockHopper {
+    func recordSecond() { Persistence.recordSeen(spotifyID: "A", uris: ["u2"]) }
 }

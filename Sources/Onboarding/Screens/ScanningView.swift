@@ -126,7 +126,13 @@ private struct ScanResultView: View {
                 onBack: nil,
                 primaryTitle: hasSongs ? "Continue" : "Pick another chat",
                 primaryEnabled: true,
-                onPrimary: { hasSongs ? state.advance() : state.back() }
+                onPrimary: {
+                    if hasSongs {
+                        Task { await state.continueAfterScan() }
+                    } else {
+                        state.back()
+                    }
+                }
             )
         }
     }

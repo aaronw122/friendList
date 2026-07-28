@@ -9,6 +9,24 @@ struct SavedPlaylist: Codable, Hashable {
     var externalURL: String
 }
 
+protocol PersistenceProviding {
+    var didOnboard: Bool { get set }
+    func loadPlaylists() -> [SavedPlaylist]
+    func savePlaylists(_ list: [SavedPlaylist])
+    func recordSeen(chatGUID: String, uris: [String])
+}
+
+struct AppPersistence: PersistenceProviding {
+    var didOnboard: Bool {
+        get { Persistence.didOnboard }
+        nonmutating set { Persistence.didOnboard = newValue }
+    }
+
+    func loadPlaylists() -> [SavedPlaylist] { Persistence.loadPlaylists() }
+    func savePlaylists(_ list: [SavedPlaylist]) { Persistence.savePlaylists(list) }
+    func recordSeen(chatGUID: String, uris: [String]) { Persistence.recordSeen(chatGUID: chatGUID, uris: uris) }
+}
+
 enum Persistence {
     private static let defaults = UserDefaults.standard
 

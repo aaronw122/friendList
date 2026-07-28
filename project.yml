@@ -45,3 +45,15 @@ targets:
       properties:
         com.apple.security.app-sandbox: false
         com.apple.security.network.client: true
+  FriendListTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: FriendList
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.friendlist.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO

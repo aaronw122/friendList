@@ -6,7 +6,14 @@ struct SpotifyPlaylistResult: Sendable {
     let added: Int
 }
 
+struct SpotifySession: Sendable, Equatable {
+    let clientID: String
+    let displayName: String
+}
+
 protocol SpotifyProviding: Sendable {
+    func savedClientID() async -> String?
+    func restoreSession() async throws -> SpotifySession?
     func connect(clientID: String) async throws -> String
     func createPlaylist(name: String,
                         description: String,
@@ -16,6 +23,23 @@ protocol SpotifyProviding: Sendable {
 
 actor SpotifyService: SpotifyProviding {
     private var auth: SpotifyAuth?
+
+    func savedClientID() -> String? {
+        Keychain.get(account: Keychain.Account.clientID)
+    }
+
+    func restoreSession() async throws -> SpotifySession? {
+        guard let clientID = Keychain.get(account: Keychain.Account.clientID),
+              !clientID.isEmpty,
+              let refreshToken = Keychain.get(account: Keychain.Account.refreshToken),
+              !refreshToken.isEmpty else { return nil }
+
+        let auth = SpotifyAuth(clientID: clientID)
+        let client = SpotifyClient { try await auth.validAccessToken() }
+        let me = try await client.me()
+        self.auth = auth
+        return SpotifySession(clientID: clientID, displayName: me.display_name ?? me.id)
+    }
 
     func connect(clientID: String) async throws -> String {
         // Changing the client ID invalidates its authenticated session and stored tokens.
@@ -59,6 +83,8 @@ actor SpotifyService: SpotifyProviding {
 }
 
 struct FakeSpotify: SpotifyProviding {
+    func savedClientID() async -> String? { nil }
+    func restoreSession() async throws -> SpotifySession? { nil }
     func connect(clientID: String) async throws -> String { "Preview User" }
     func createPlaylist(name: String, description: String, trackURIs: [String],
                         progress: @escaping @Sendable (Double, String) -> Void) async throws -> SpotifyPlaylistResult {

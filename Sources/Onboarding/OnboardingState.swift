@@ -62,11 +62,20 @@ final class OnboardingState {
 
     @ObservationIgnored let messages: MessagesReading
     @ObservationIgnored let spotify: SpotifyProviding
+    @ObservationIgnored var persistence: PersistenceProviding
     @ObservationIgnored private var accessPollTask: Task<Void, Never>?
     @ObservationIgnored private var createInFlight = false
     @ObservationIgnored private var chatsLoading = false
+    @ObservationIgnored private var restoreTask: Task<SpotifyRestoreResult, Never>?
 
-    init(messages: MessagesReading? = nil, spotify: SpotifyProviding? = nil) {
+    private struct SpotifyRestoreResult: Sendable {
+        let clientID: String?
+        let result: Result<SpotifySession?, Error>
+    }
+
+    init(messages: MessagesReading? = nil,
+         spotify: SpotifyProviding? = nil,
+         persistence: PersistenceProviding = AppPersistence()) {
         let isPreview = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
         if let messages {
             self.messages = messages
@@ -78,11 +87,12 @@ final class OnboardingState {
         } else {
             self.spotify = isPreview ? FakeSpotify() : SpotifyService()
         }
-        self.lists = Persistence.loadPlaylists().map {
+        self.persistence = persistence
+        self.lists = persistence.loadPlaylists().map {
             Playlist(name: $0.name, songCount: $0.songCount, chatName: $0.chatName,
                      externalURL: $0.externalURL, spotifyID: $0.spotifyID, chatGUID: $0.chatGUID)
         }
-        if !isPreview && Persistence.didOnboard && !lists.isEmpty {
+        if !isPreview && persistence.didOnboard && !lists.isEmpty {
             step = 0
             sheetIn = false
             probeAccessOnAppear()
@@ -227,6 +237,53 @@ final class OnboardingState {
     // MARK: - Spotify connect (M2)
 
     @MainActor
+    func restoreSpotifySession() async {
+        guard !connected else { return }
+        let task: Task<SpotifyRestoreResult, Never>
+        if let restoreTask {
+            task = restoreTask
+        } else {
+            let provider = spotify
+            task = Task {
+                let clientID = await provider.savedClientID()
+                do {
+                    return SpotifyRestoreResult(clientID: clientID, result: .success(try await provider.restoreSession()))
+                } catch {
+                    return SpotifyRestoreResult(clientID: clientID, result: .failure(error))
+                }
+            }
+            restoreTask = task
+        }
+
+        let restoration = await task.value
+        clientId = restoration.clientID ?? ""
+        guard !clientId.isEmpty else { return }
+
+        switch restoration.result {
+        case .success(let restoredSession):
+            guard let session = restoredSession else { return }
+            clientId = session.clientID
+            spotifyDisplayName = session.displayName
+            connected = true
+            connectError = nil
+        case .failure(let error):
+            if error.isSpotifyAuthenticationFailure {
+                connected = false
+                connectError = "Your Spotify session expired. Please reconnect."
+            } else {
+                // A temporary network or API failure must not discard an otherwise reusable session.
+                connectError = "Couldn't check Spotify right now: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    @MainActor
+    func continueAfterScan() async {
+        await restoreSpotifySession()
+        go(to: connected ? 7 : 5)
+    }
+
+    @MainActor
     func connectSpotify() async {
         let fromStep = step
         if connected {
@@ -274,7 +331,13 @@ final class OnboardingState {
             createPct = 1
             completeCreation(externalURL: result.url, spotifyID: result.id)
         } catch {
-            createLabel = "Couldn't finish: \(error.localizedDescription)"
+            if error.isSpotifyAuthenticationFailure {
+                connected = false
+                connectError = "Your Spotify session expired. Please reconnect."
+                go(to: 5)
+            } else {
+                createLabel = "Couldn't finish: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -296,6 +359,7 @@ final class OnboardingState {
     func back() {
         switch step {
         case 5: go(to: 3)
+        case 7 where connected: go(to: 4)
         case 3: go(to: lists.isEmpty ? 2 : 0)
         case 0, 1: break
         default: go(to: max(step - 1, 1))
@@ -324,15 +388,15 @@ final class OnboardingState {
         lastCreatedURL = externalURL
         persistAllPlaylists()
         if let guid = pickedChat?.guid {
-            Persistence.recordSeen(chatGUID: guid, uris: scannedTrackURIs)
+            persistence.recordSeen(chatGUID: guid, uris: scannedTrackURIs)
         }
-        Persistence.didOnboard = true
+        persistence.didOnboard = true
         go(to: 9)
     }
 
     /// Persist each playlist with its own Spotify ID and chat GUID to prevent cross-row association.
     private func persistAllPlaylists() {
-        Persistence.savePlaylists(lists.map {
+        persistence.savePlaylists(lists.map {
             SavedPlaylist(spotifyID: $0.spotifyID, name: $0.name, songCount: $0.songCount,
                           chatName: $0.chatName, chatGUID: $0.chatGUID, externalURL: $0.externalURL)
         })

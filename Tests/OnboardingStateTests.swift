@@ -122,6 +122,8 @@ private final class PersistenceFake: PersistenceProviding {
     }
     func recordSeen(spotifyID: String, uris: [String]) { seenURIs[spotifyID, default: []].formUnion(uris) }
     func seen(forSpotifyID id: String) -> Set<String> { seenURIs[id] ?? [] }
+    func acquireSyncLock(blocking: Bool) -> Bool { true }
+    func releaseSyncLock() {}
 }
 
 private struct MessagesFake: MessagesReading {
@@ -172,5 +174,9 @@ private actor SpotifyFake: SpotifyProviding {
         if let createError { throw createError }
         progress(1, "Done")
         return SpotifyPlaylistResult(id: "playlist-id", url: "https://open.spotify.com/playlist/id", added: trackURIs.count)
+    }
+    func appendTracks(playlistID: String, trackURIs: [String], onBatchAdded: ([String]) -> Void) async throws -> Int {
+        for batch in trackURIs.chunked(100) { onBatchAdded(batch) }
+        return trackURIs.count
     }
 }

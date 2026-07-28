@@ -5,6 +5,7 @@ struct OnboardingContainer: View {
     @State private var physics = PhysicsBridge()
     @State private var visibleStep = 1
     @State private var outgoingStep: Int?
+    @State private var incomingOffset: CGFloat = 0
     @State private var outgoingOffset: CGFloat = 0
     @State private var transitionID = 0
 
@@ -26,9 +27,18 @@ struct OnboardingContainer: View {
 
             ForEach(renderedSteps, id: \.self) { step in
                 screen(for: step)
-                    .offset(y: step == outgoingStep ? outgoingOffset : 0)
-                    .zIndex(step == outgoingStep ? 20 : 10)
+                    .offset(y: step == outgoingStep ? outgoingOffset : incomingOffset)
+                    .allowsHitTesting(outgoingStep == nil)
+                    .zIndex(step == outgoingStep ? 10 : 11)
             }
+
+            // Hides the sliding screens behind the title bar.
+            Rectangle()
+                .fill(Palette.deskTop)
+                .frame(height: 24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .allowsHitTesting(false)
+                .zIndex(500)
 
             if state.step >= 2 {
                 SheetTopProgressBar(fraction: state.progressFraction)
@@ -45,19 +55,19 @@ struct OnboardingContainer: View {
                 .frame(width: Geometry.sheetWidth)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .padding(.bottom, SheetLayout.footerInset + 12)
+                .allowsHitTesting(outgoingStep == nil)
                 .zIndex(100)
             }
         }
         .frame(width: Geometry.contentWidth, height: Geometry.contentHeight)
         .environment(state)
         .environment(\.physicsBridge, physics)
-        .onChange(of: state.step) { _, newStep in
-            beginTransition(to: newStep)
-        }
+        .onChange(of: state.step) { _, newStep in beginTransition(to: newStep) }
         .simultaneousGesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
                     guard state.canGoBack else { return }
+                    guard outgoingStep == nil else { return }
                     let dx = value.translation.width, dy = value.translation.height
                     if dx > 80 && abs(dx) > abs(dy) * 1.3 { state.back() }
                 }
@@ -65,34 +75,36 @@ struct OnboardingContainer: View {
     }
 
     private func beginTransition(to newStep: Int) {
-        let previousStep = visibleStep
-        let targetOffset = state.goingBack ? Geometry.contentHeight : -Geometry.contentHeight
-
+        let previous = visibleStep
+        guard newStep != previous else { return }
+        let height = Geometry.contentHeight
+        let exitOverscan: CGFloat = 64
+        let goingBack = state.goingBack
         transitionID += 1
-        let currentTransitionID = transitionID
+        let id = transitionID
 
-        var transaction = Transaction()
-        transaction.animation = nil
-        withTransaction(transaction) {
-            outgoingStep = previousStep
+        var still = Transaction(); still.disablesAnimations = true
+        withTransaction(still) {
+            outgoingStep = previous
             outgoingOffset = 0
+            incomingOffset = goingBack ? -height : height
             visibleStep = newStep
         }
 
         Task { @MainActor in
             await Task.yield()
-            guard transitionID == currentTransitionID else { return }
-
-            withAnimation(
-                .spring(response: 0.5, dampingFraction: 0.82),
-                completionCriteria: .logicallyComplete
-            ) {
-                outgoingOffset = targetOffset
+            guard transitionID == id else { return }
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
+                incomingOffset = 0
+            }
+            withAnimation(.easeInOut(duration: 0.30)) {
+                outgoingOffset = goingBack
+                    ? height + exitOverscan
+                    : -(height + exitOverscan)
             } completion: {
-                guard transitionID == currentTransitionID else { return }
-                var transaction = Transaction()
-                transaction.animation = nil
-                withTransaction(transaction) {
+                guard transitionID == id else { return }
+                var done = Transaction(); done.disablesAnimations = true
+                withTransaction(done) {
                     outgoingStep = nil
                     outgoingOffset = 0
                 }
@@ -101,9 +113,7 @@ struct OnboardingContainer: View {
     }
 
     private var renderedSteps: [Int] {
-        if let outgoingStep {
-            return [visibleStep, outgoingStep]
-        }
+        if let outgoingStep { return [visibleStep, outgoingStep] }
         return [visibleStep]
     }
 

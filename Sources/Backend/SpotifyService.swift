@@ -23,19 +23,30 @@ protocol SpotifyProviding: Sendable {
 
 actor SpotifyService: SpotifyProviding {
     private var auth: SpotifyAuth?
+    private let http: SpotifyHTTP
+    private let clientIDSource: @Sendable () -> String?
+    private let makeAuth: @Sendable (String, SpotifyHTTP) -> SpotifyAuth
+
+    init(http: SpotifyHTTP = URLSessionHTTP(),
+         clientIDSource: @escaping @Sendable () -> String? = { Keychain.get(account: Keychain.Account.clientID) },
+         makeAuth: @escaping @Sendable (String, SpotifyHTTP) -> SpotifyAuth = { SpotifyAuth(clientID: $0, http: $1) }) {
+        self.http = http
+        self.clientIDSource = clientIDSource
+        self.makeAuth = makeAuth
+    }
 
     func savedClientID() -> String? {
-        Keychain.get(account: Keychain.Account.clientID)
+        clientIDSource()
     }
 
     func restoreSession() async throws -> SpotifySession? {
-        guard let clientID = Keychain.get(account: Keychain.Account.clientID),
+        guard let clientID = clientIDSource(),
               !clientID.isEmpty,
               let refreshToken = Keychain.get(account: Keychain.Account.refreshToken),
               !refreshToken.isEmpty else { return nil }
 
-        let auth = SpotifyAuth(clientID: clientID)
-        let client = SpotifyClient { try await auth.validAccessToken() }
+        let auth = makeAuth(clientID, http)
+        let client = SpotifyClient(tokenProvider: { try await auth.validAccessToken() }, http: http)
         let me = try await client.me()
         self.auth = auth
         return SpotifySession(clientID: clientID, displayName: me.display_name ?? me.id)
@@ -47,11 +58,11 @@ actor SpotifyService: SpotifyProviding {
             Keychain.clearTokens()
             Keychain.set(clientID, account: Keychain.Account.clientID)
         }
-        let auth = SpotifyAuth(clientID: clientID)
+        let auth = makeAuth(clientID, http)
         try await auth.authorize(scopes: SpotifyConfig.scopes)
         self.auth = auth
 
-        let client = SpotifyClient { try await auth.validAccessToken() }
+        let client = SpotifyClient(tokenProvider: { try await auth.validAccessToken() }, http: http)
         let me = try await client.me()
         return me.display_name ?? me.id
     }
@@ -61,7 +72,7 @@ actor SpotifyService: SpotifyProviding {
                         trackURIs: [String],
                         progress: @escaping @Sendable (Double, String) -> Void) async throws -> SpotifyPlaylistResult {
         guard let auth else { throw SpotifyError.notAuthenticated }
-        let client = SpotifyClient { try await auth.validAccessToken() }
+        let client = SpotifyClient(tokenProvider: { try await auth.validAccessToken() }, http: http)
 
         progress(0.05, "Creating the playlist on Spotify…")
         let playlist = try await client.createPlaylist(name: name, description: description)
@@ -79,6 +90,31 @@ actor SpotifyService: SpotifyProviding {
         }
         progress(1, "Done")
         return SpotifyPlaylistResult(id: playlist.id, url: playlist.external_urls.spotify, added: added)
+    }
+
+    /// Headless append: no interactive authorize, commits each landed batch via onBatchAdded so a mid-run 5xx keeps earlier tracks.
+    func appendTracks(playlistID: String,
+                      trackURIs: [String],
+                      onBatchAdded: ([String]) -> Void) async throws -> Int {
+        let auth = try sharedAuth()
+        let client = SpotifyClient(tokenProvider: { try await auth.validAccessToken() }, http: http)
+
+        var added = 0
+        for batch in trackURIs.chunked(100) {
+            try await client.addItems(playlistID: playlistID, uris: batch)
+            added += batch.count
+            onBatchAdded(batch)
+        }
+        return added
+    }
+
+    /// Reuses the cached auth or builds one from the keychain and assigns it back, so a single rotating refresh token is never spent twice.
+    private func sharedAuth() throws -> SpotifyAuth {
+        if let auth { return auth }
+        guard let clientID = clientIDSource(), !clientID.isEmpty else { throw SpotifyError.notAuthenticated }
+        let auth = makeAuth(clientID, http)
+        self.auth = auth
+        return auth
     }
 }
 

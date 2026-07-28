@@ -85,7 +85,7 @@ final class OnboardingState {
         if !isPreview && Persistence.didOnboard && !lists.isEmpty {
             step = 0
             sheetIn = false
-            probeAccessOnAppear()   // warm the chat list so "Create a new one" is instant
+            probeAccessOnAppear()
         }
         if isPreview {
             access = true
@@ -163,8 +163,7 @@ final class OnboardingState {
         }
     }
 
-    // Enumerating group chats scans a large recent-message window, so run it off
-    // the main thread — otherwise it blocks the click and transition into the picker.
+    // Runs off the main thread; the chat scan is heavy enough to stall the picker transition.
     func reloadChats() {
         guard !chatsLoading else { return }
         chatsLoading = true

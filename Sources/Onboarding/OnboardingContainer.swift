@@ -25,8 +25,6 @@ struct OnboardingContainer: View {
                 .animation(.easeInOut(duration: 0.35), value: state.step >= 2)
                 .zIndex(0)
 
-            // The incoming screen springs into place while the outgoing screen clears
-            // the viewport on a bounded curve.
             ForEach(renderedSteps, id: \.self) { step in
                 screen(for: step)
                     .offset(y: step == outgoingStep ? outgoingOffset : incomingOffset)
@@ -34,8 +32,7 @@ struct OnboardingContainer: View {
                     .zIndex(step == outgoingStep ? 10 : 11)
             }
 
-            // Masks sliding screens in the title-bar zone; matches the desk top so
-            // it's invisible at rest.
+            // Hides the sliding screens behind the title bar.
             Rectangle()
                 .fill(Palette.deskTop)
                 .frame(height: 24)
@@ -86,7 +83,6 @@ struct OnboardingContainer: View {
         transitionID += 1
         let id = transitionID
 
-        // Place the incoming screen just off the opposite edge, outgoing at rest.
         var still = Transaction(); still.disablesAnimations = true
         withTransaction(still) {
             outgoingStep = previous

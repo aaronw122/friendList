@@ -11,9 +11,11 @@ struct SavedPlaylist: Codable, Hashable {
 
 protocol PersistenceProviding {
     var didOnboard: Bool { get set }
+    var authorizationDate: Date? { get set }
     func loadPlaylists() -> [SavedPlaylist]?
     func upsertPlaylists(_ updates: [SavedPlaylist])
-    func recordSeen(chatGUID: String, uris: [String])
+    func recordSeen(spotifyID: String, uris: [String])
+    func seen(forSpotifyID id: String) -> Set<String>
 }
 
 struct AppPersistence: PersistenceProviding {
@@ -22,13 +24,39 @@ struct AppPersistence: PersistenceProviding {
         nonmutating set { Persistence.didOnboard = newValue }
     }
 
+    var authorizationDate: Date? {
+        get { Persistence.authorizationDate }
+        nonmutating set { Persistence.authorizationDate = newValue }
+    }
+
     func loadPlaylists() -> [SavedPlaylist]? { Persistence.loadPlaylists() }
     func upsertPlaylists(_ updates: [SavedPlaylist]) { Persistence.upsertPlaylists(updates) }
-    func recordSeen(chatGUID: String, uris: [String]) { Persistence.recordSeen(chatGUID: chatGUID, uris: uris) }
+    func recordSeen(spotifyID: String, uris: [String]) { Persistence.recordSeen(spotifyID: spotifyID, uris: uris) }
+    func seen(forSpotifyID id: String) -> Set<String> { Persistence.seen(forSpotifyID: id) }
+}
+
+// The cross-process state lives in one JSON file under Application Support: `seen`
+// (dedup map keyed by spotifyID) and the created playlists. Reads are lock-free
+// (atomic rename means no torn read); every write funnels through `mutateStore`
+// under a dedicated advisory `sync.lock`, so the GUI and headless agent never
+// clobber each other. A decode failure aborts rather than wiping good data.
+struct StoreFile: Codable {
+    var schemaVersion: Int
+    var seen: [String: [String]]
+    var playlists: [SavedPlaylist]
+    var authorizationDate: Date?
 }
 
 enum Persistence {
     private static let defaults = UserDefaults.standard
+    private static let fm = FileManager.default
+    private static let encoder = JSONEncoder()
+    private static let decoder = JSONDecoder()
+    private static let schemaVersion = 1
+
+    // Test seams: point the store at a temp dir and feed migration a scratch defaults.
+    static var storeDirectoryOverride: URL?
+    static var legacyDefaults: UserDefaults = .standard
 
     // MARK: FDA relaunch resume
     private static let kResumeAtPicker = "friendlist.resumeAtPicker"
@@ -44,65 +72,62 @@ enum Persistence {
         set { defaults.set(newValue, forKey: kDidOnboard) }
     }
 
-    // MARK: Created playlists (Home)
-    private static let kPlaylists = "friendlist.playlists"
-    private static let kPlaylistsBackup = "friendlist.playlists.bak"
-    private static let kPlaylistsCorrupt = "friendlist.playlists.corrupt"
+    // MARK: File store locations
+    private static var storeDir: URL {
+        if let override = storeDirectoryOverride { return override }
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("com.friendlist.app", isDirectory: true)
+    }
+    private static var storeURL: URL { storeDir.appendingPathComponent("store.json") }
+    private static var backupURL: URL { storeDir.appendingPathComponent("store.json.bak") }
+    private static var corruptURL: URL { storeDir.appendingPathComponent("store.json.corrupt") }
+    static var lockURL: URL { storeDir.appendingPathComponent("sync.lock") }
 
-    static func loadPlaylists() -> [SavedPlaylist]? {
-        switch playlistStore() {
-        case .absent:
-            return []
-        case .loaded(let list):
-            return list
-        case .undecodable(let raw):
-            defaults.set(raw, forKey: kPlaylistsCorrupt)
-            return nil
-        }
+    private static func ensureDir() {
+        try? fm.createDirectory(at: storeDir, withIntermediateDirectories: true)
     }
 
+    // MARK: Cross-process advisory lock
+    // The reusable primitive the sync core wraps around an entire run. The lock is an
+    // fd-based flock: associated with the open file description and the process, not a
+    // thread, so the run can hold it across awaits (including the Spotify token refresh)
+    // without any thread-affinity mutex spanning a suspension point. Non-blocking acquire
+    // skips when another process is active; blocking is for the user-initiated "Sync now".
+    // Reference-counted so a mutate re-entering inside a run reuses the held fd instead of
+    // opening a second one, which would conflict with the process's own lock.
+    private static let crossLock = CrossProcessLock { lockURL }
+    // Serializes only the synchronous read-fresh -> mutate -> write section; never held
+    // across an await, so its thread affinity is always sound.
+    private static let storeMutex = NSRecursiveLock()
+
+    @discardableResult
+    static func withSyncLock<T>(blocking: Bool, _ body: () throws -> T) rethrows -> T? {
+        guard crossLock.acquire(blocking: blocking) else { return nil }
+        defer { crossLock.release() }
+        return try body()
+    }
+
+    @discardableResult
+    static func acquireSyncLock(blocking: Bool) -> Bool { crossLock.acquire(blocking: blocking) }
+    static func releaseSyncLock() { crossLock.release() }
+
+    // MARK: Playlists
+    static func loadPlaylists() -> [SavedPlaylist]? { currentStore()?.playlists }
+
+    // The single writer path for the playlists file, carrying PR #8's upsert-by-
+    // spotifyID merge (name+chatGUID fallback) forward under the lock.
     static func upsertPlaylists(_ updates: [SavedPlaylist]) {
         guard !updates.isEmpty else { return }
-
-        let stored = playlistStore()
-        var list: [SavedPlaylist]
-        switch stored {
-        case .absent:
-            list = []
-        case .loaded(let current):
-            list = current
-        case .undecodable(let raw):
-            defaults.set(raw, forKey: kPlaylistsCorrupt)
-            list = []
-        }
-
-        for update in updates {
-            if let index = list.firstIndex(where: { playlistsMatch($0, update) }) {
-                list[index] = update
-            } else {
-                list.append(update)
+        mutateStore { store in
+            for update in updates {
+                if let index = store.playlists.firstIndex(where: { playlistsMatch($0, update) }) {
+                    store.playlists[index] = update
+                } else {
+                    store.playlists.append(update)
+                }
             }
         }
-
-        guard let data = try? JSONEncoder().encode(list) else { return }
-        if let prior = defaults.object(forKey: kPlaylists) {
-            defaults.set(prior, forKey: kPlaylistsBackup)
-        }
-        defaults.set(data, forKey: kPlaylists)
-    }
-
-    private enum PlaylistStore {
-        case absent
-        case loaded([SavedPlaylist])
-        case undecodable(Any)
-    }
-
-    private static func playlistStore() -> PlaylistStore {
-        guard let raw = defaults.object(forKey: kPlaylists) else { return .absent }
-        guard let data = raw as? Data,
-              let list = try? JSONDecoder().decode([SavedPlaylist].self, from: data)
-        else { return .undecodable(raw) }
-        return .loaded(list)
     }
 
     private static func playlistsMatch(_ lhs: SavedPlaylist, _ rhs: SavedPlaylist) -> Bool {
@@ -110,23 +135,183 @@ enum Persistence {
         return lhs.name == rhs.name && lhs.chatGUID == rhs.chatGUID
     }
 
-    // MARK: Per-chat dedup seen-set (M2 in-app dedup)
+    // MARK: Dedup seen-set (keyed by spotifyID so two playlists from one chat track apart)
+    static func seen(forSpotifyID id: String) -> Set<String> {
+        guard let store = currentStore() else { return [] }
+        return Set(store.seen[id] ?? [])
+    }
+
+    static func recordSeen(spotifyID: String, uris: [String]) {
+        guard !spotifyID.isEmpty else { return }
+        mutateStore { store in
+            var set = Set(store.seen[spotifyID] ?? [])
+            set.formUnion(uris)
+            store.seen[spotifyID] = Array(set)
+        }
+    }
+
+    // MARK: Spotify authorization date (drives the 6-month token-expiry nudge)
+    static var authorizationDate: Date? {
+        get { currentStore()?.authorizationDate }
+        set { mutateStore { $0.authorizationDate = newValue } }
+    }
+
+    // MARK: Store read/write core
+    // Lock-guarded read-fresh → mutate → write. Returns nil on a corrupt store
+    // (mutation aborted, good bytes preserved) rather than wiping seen/playlists.
+    @discardableResult
+    static func mutateStore<T>(_ body: (inout StoreFile) -> T) -> T? {
+        guard crossLock.acquire(blocking: true) else { return nil }
+        defer { crossLock.release() }
+        storeMutex.lock()
+        defer { storeMutex.unlock() }
+        guard var store = loadOrMigrateLocked() else { return nil }
+        let result = body(&store)
+        writeStore(store)
+        return result
+    }
+
+    private static func currentStore() -> StoreFile? {
+        switch readStoreRaw() {
+        case .decoded(let store):
+            return store
+        case .corrupt(let raw):
+            stashCorrupt(raw)
+            return nil
+        case .fresh:
+            guard crossLock.acquire(blocking: true) else { return nil }
+            defer { crossLock.release() }
+            storeMutex.lock()
+            defer { storeMutex.unlock() }
+            return loadOrMigrateLocked()
+        }
+    }
+
+    private enum StoreRead {
+        case fresh
+        case decoded(StoreFile)
+        case corrupt(Data)
+    }
+
+    private static func readStoreRaw() -> StoreRead {
+        ensureDir()
+        guard fm.fileExists(atPath: storeURL.path) else { return .fresh }
+        guard let data = try? Data(contentsOf: storeURL) else { return .corrupt(Data()) }
+        guard let store = try? decoder.decode(StoreFile.self, from: data) else { return .corrupt(data) }
+        return .decoded(store)
+    }
+
+    // Must run under the lock: materializes the file on first-ever access (one-time
+    // migration from the legacy UserDefaults `seen`/`playlists`), nil == corrupt.
+    private static func loadOrMigrateLocked() -> StoreFile? {
+        switch readStoreRaw() {
+        case .decoded(let store):
+            return store
+        case .corrupt(let raw):
+            stashCorrupt(raw)
+            return nil
+        case .fresh:
+            let built = migrateFromLegacy()
+            writeStore(built)
+            return built
+        }
+    }
+
+    private static func writeStore(_ store: StoreFile) {
+        ensureDir()
+        if fm.fileExists(atPath: storeURL.path), let current = try? Data(contentsOf: storeURL) {
+            try? current.write(to: backupURL, options: .atomic)
+        }
+        guard let data = try? encoder.encode(store) else { return }
+        try? data.write(to: storeURL, options: .atomic)
+    }
+
+    private static func stashCorrupt(_ raw: Data) {
+        ensureDir()
+        try? raw.write(to: corruptURL, options: .atomic)
+    }
+
+    // MARK: One-time migration (chatGUID-keyed UserDefaults → spotifyID-keyed file)
+    private static let kPlaylists = "friendlist.playlists"
+    private static let kPlaylistsCorrupt = "friendlist.playlists.corrupt"
     private static let kSeen = "friendlist.seen"
-    static func seenTracks(chatGUID: String) -> Set<String> {
-        let all = seenMap()
-        return Set(all[chatGUID] ?? [])
+
+    private static func migrateFromLegacy() -> StoreFile {
+        let playlists = legacyPlaylists()
+        let legacySeen = legacySeenMap()
+        var seen: [String: [String]] = [:]
+        for playlist in playlists where !playlist.spotifyID.isEmpty {
+            guard let uris = legacySeen[playlist.chatGUID] else { continue }
+            var set = Set(seen[playlist.spotifyID] ?? [])
+            set.formUnion(uris)
+            seen[playlist.spotifyID] = Array(set)
+        }
+        return StoreFile(schemaVersion: schemaVersion, seen: seen, playlists: playlists, authorizationDate: nil)
     }
-    static func recordSeen(chatGUID: String, uris: [String]) {
-        var all = seenMap()
-        var set = Set(all[chatGUID] ?? [])
-        set.formUnion(uris)
-        all[chatGUID] = Array(set)
-        if let data = try? JSONEncoder().encode(all) { defaults.set(data, forKey: kSeen) }
+
+    private static func legacyPlaylists() -> [SavedPlaylist] {
+        guard let raw = legacyDefaults.object(forKey: kPlaylists) else { return [] }
+        guard let data = raw as? Data,
+              let list = try? decoder.decode([SavedPlaylist].self, from: data)
+        else {
+            legacyDefaults.set(raw, forKey: kPlaylistsCorrupt)
+            return []
+        }
+        return list
     }
-    private static func seenMap() -> [String: [String]] {
-        guard let data = defaults.data(forKey: kSeen),
-              let map = try? JSONDecoder().decode([String: [String]].self, from: data)
+
+    private static func legacySeenMap() -> [String: [String]] {
+        guard let data = legacyDefaults.data(forKey: kSeen),
+              let map = try? decoder.decode([String: [String]].self, from: data)
         else { return [:] }
         return map
+    }
+}
+
+// Advisory `flock` on a dedicated file. The lock lives on the open file description and
+// the process (not a thread), so the run may hold it across awaits. A `count` guarded by
+// a plain gate — taken and dropped within each synchronous acquire/release, never across
+// an await — reference-counts holders so a nested mutate reuses the single held fd rather
+// than opening a second one (which would block on the process's own lock).
+private final class CrossProcessLock {
+    private let pathProvider: () -> URL
+    private let gate = NSLock()
+    private var fd: Int32 = -1
+    private var count = 0
+
+    init(path: @escaping () -> URL) { pathProvider = path }
+
+    func acquire(blocking: Bool) -> Bool {
+        gate.lock()
+        defer { gate.unlock() }
+        if count > 0 {
+            count += 1
+            return true
+        }
+        let url = pathProvider()
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        let handle = open(url.path, O_RDONLY | O_CREAT, 0o644)
+        guard handle >= 0 else { return false }
+        let operation = LOCK_EX | (blocking ? 0 : LOCK_NB)
+        guard flock(handle, operation) == 0 else {
+            close(handle)
+            return false
+        }
+        fd = handle
+        count = 1
+        return true
+    }
+
+    func release() {
+        gate.lock()
+        defer { gate.unlock() }
+        guard count > 0 else { return }
+        count -= 1
+        if count == 0 {
+            flock(fd, LOCK_UN)
+            close(fd)
+            fd = -1
+        }
     }
 }

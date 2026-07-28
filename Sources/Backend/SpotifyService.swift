@@ -19,6 +19,10 @@ protocol SpotifyProviding: Sendable {
                         description: String,
                         trackURIs: [String],
                         progress: @escaping @Sendable (Double, String) -> Void) async throws -> SpotifyPlaylistResult
+    /// Silent append; throws SpotifyError.needsReconnect/.playlistPublic/.playlistFull, commits each landed batch via onBatchAdded.
+    func appendTracks(playlistID: String,
+                      trackURIs: [String],
+                      onBatchAdded: ([String]) -> Void) async throws -> Int
 }
 
 actor SpotifyService: SpotifyProviding {
@@ -127,6 +131,10 @@ struct FakeSpotify: SpotifyProviding {
         progress(0.5, "Adding tracks…")
         progress(1, "Done")
         return SpotifyPlaylistResult(id: "preview", url: "https://open.spotify.com/playlist/preview", added: trackURIs.count)
+    }
+    func appendTracks(playlistID: String, trackURIs: [String], onBatchAdded: ([String]) -> Void) async throws -> Int {
+        for batch in trackURIs.chunked(100) { onBatchAdded(batch) }
+        return trackURIs.count
     }
 }
 

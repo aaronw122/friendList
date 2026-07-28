@@ -16,6 +16,9 @@ protocol PersistenceProviding {
     func upsertPlaylists(_ updates: [SavedPlaylist])
     func recordSeen(spotifyID: String, uris: [String])
     func seen(forSpotifyID id: String) -> Set<String>
+    // The cross-process run lock the sync core wraps around an entire run.
+    func acquireSyncLock(blocking: Bool) -> Bool
+    func releaseSyncLock()
 }
 
 struct AppPersistence: PersistenceProviding {
@@ -33,6 +36,8 @@ struct AppPersistence: PersistenceProviding {
     func upsertPlaylists(_ updates: [SavedPlaylist]) { Persistence.upsertPlaylists(updates) }
     func recordSeen(spotifyID: String, uris: [String]) { Persistence.recordSeen(spotifyID: spotifyID, uris: uris) }
     func seen(forSpotifyID id: String) -> Set<String> { Persistence.seen(forSpotifyID: id) }
+    func acquireSyncLock(blocking: Bool) -> Bool { Persistence.acquireSyncLock(blocking: blocking) }
+    func releaseSyncLock() { Persistence.releaseSyncLock() }
 }
 
 // The cross-process state lives in one JSON file under Application Support: `seen`

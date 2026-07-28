@@ -14,7 +14,12 @@ KC_NAME="friendlist-signing"
 KC_PASS="friendlist"
 KC_PATH="$HOME/Library/Keychains/${KC_NAME}.keychain-db"
 
-if security find-identity -v -p codesigning "$KC_PATH" 2>/dev/null | grep -q "$IDENTITY"; then
+# NOTE: no -v here. This self-signed cert is untrusted, so `find-identity -v`
+# reports "0 valid identities" and the name never matches — which made this
+# script delete+recreate the keychain on EVERY run, breaking any open Xcode's
+# cached keychain handle mid-build. codesign accepts the identity by name
+# regardless of trust, so match on presence, not validity.
+if security find-identity -p codesigning "$KC_PATH" 2>/dev/null | grep -q "$IDENTITY"; then
   echo "✓ Signing identity '$IDENTITY' already exists in $KC_NAME."
 else
   TMP="$(mktemp -d)"

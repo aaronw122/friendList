@@ -64,6 +64,7 @@ final class OnboardingState {
     @ObservationIgnored let spotify: SpotifyProviding
     @ObservationIgnored private var accessPollTask: Task<Void, Never>?
     @ObservationIgnored private var createInFlight = false
+    @ObservationIgnored private var chatsLoading = false
 
     init(messages: MessagesReading? = nil, spotify: SpotifyProviding? = nil) {
         let isPreview = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
@@ -84,6 +85,7 @@ final class OnboardingState {
         if !isPreview && Persistence.didOnboard && !lists.isEmpty {
             step = 0
             sheetIn = false
+            probeAccessOnAppear()   // warm the chat list so "Create a new one" is instant
         }
         if isPreview {
             access = true
@@ -123,9 +125,13 @@ final class OnboardingState {
     // MARK: - Full Disk Access
 
     func probeAccessOnAppear() {
-        if messages.canRead() {
-            access = true
-            reloadChats()
+        let reader = messages
+        Task { @MainActor in
+            let ok = await Task.detached(priority: .userInitiated) { reader.canRead() }.value
+            if ok {
+                access = true
+                reloadChats()
+            }
         }
     }
 
@@ -157,14 +163,26 @@ final class OnboardingState {
         }
     }
 
+    // Enumerating group chats scans a large recent-message window, so run it off
+    // the main thread — otherwise it blocks the click and transition into the picker.
     func reloadChats() {
-        do {
-            let gcs = try messages.groupChats()
-            chats = gcs.map { ChatSample(name: $0.name, links: $0.linkCount, pinned: false, guid: $0.guid) }
-            loadError = nil
-        } catch {
-            chats = []
-            loadError = error.localizedDescription
+        guard !chatsLoading else { return }
+        chatsLoading = true
+        let reader = messages
+        Task { @MainActor in
+            defer { chatsLoading = false }
+            do {
+                let loaded = try await Task.detached(priority: .userInitiated) {
+                    try reader.groupChats().map {
+                        ChatSample(name: $0.name, links: $0.linkCount, pinned: false, guid: $0.guid)
+                    }
+                }.value
+                chats = loaded
+                loadError = nil
+            } catch {
+                chats = []
+                loadError = error.localizedDescription
+            }
         }
     }
 
@@ -265,10 +283,8 @@ final class OnboardingState {
 
     func go(to newStep: Int) {
         goingBack = newStep < step
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
-            step = newStep
-            sheetIn = newStep > 1
-        }
+        step = newStep
+        sheetIn = newStep > 1
     }
 
     func advance() {

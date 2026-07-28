@@ -398,8 +398,8 @@ final class OnboardingState {
         }
         lastCreatedURL = externalURL
         persistPlaylist(pl)
-        if let guid = pickedChat?.guid {
-            persistence.recordSeen(chatGUID: guid, uris: scannedTrackURIs)
+        if !spotifyID.isEmpty {
+            persistence.recordSeen(spotifyID: spotifyID, uris: scannedTrackURIs)
         }
         persistence.didOnboard = true
         go(to: 9)

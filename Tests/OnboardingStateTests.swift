@@ -90,7 +90,7 @@ final class OnboardingStateTests: XCTestCase {
         XCTAssertEqual(state.lists.last?.spotifyID, "playlist-id")
         XCTAssertEqual(state.step, 9)
         XCTAssertEqual(persistence.savedPlaylists.last?.spotifyID, "playlist-id")
-        XCTAssertEqual(persistence.seenURIs["chat-guid"], Set(state.scannedTrackURIs))
+        XCTAssertEqual(persistence.seenURIs["playlist-id"], Set(state.scannedTrackURIs))
     }
 
     private func makeState(spotify: SpotifyFake,
@@ -103,6 +103,7 @@ final class OnboardingStateTests: XCTestCase {
 
 private final class PersistenceFake: PersistenceProviding {
     var didOnboard = false
+    var authorizationDate: Date?
     var savedPlaylists: [SavedPlaylist] = []
     var seenURIs: [String: Set<String>] = [:]
 
@@ -119,7 +120,8 @@ private final class PersistenceFake: PersistenceProviding {
             }
         }
     }
-    func recordSeen(chatGUID: String, uris: [String]) { seenURIs[chatGUID, default: []].formUnion(uris) }
+    func recordSeen(spotifyID: String, uris: [String]) { seenURIs[spotifyID, default: []].formUnion(uris) }
+    func seen(forSpotifyID id: String) -> Set<String> { seenURIs[id] ?? [] }
 }
 
 private struct MessagesFake: MessagesReading {

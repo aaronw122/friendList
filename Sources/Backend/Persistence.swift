@@ -1,9 +1,7 @@
 import Foundation
 
-/// A playlist we created, persisted so Home survives quit. `externalURL` is the
-/// Spotify web URL (populated in M2; empty until then).
 struct SavedPlaylist: Codable, Hashable {
-    var spotifyID: String        // Spotify playlist id (empty until M2 writes it)
+    var spotifyID: String
     var name: String
     var songCount: Int
     var chatName: String
@@ -11,9 +9,6 @@ struct SavedPlaylist: Codable, Hashable {
     var externalURL: String
 }
 
-/// Small UserDefaults/Application-Support-backed store for the durable bits the
-/// plan (C2) requires: the FDA relaunch-resume marker, an onboarding-complete
-/// flag, the created playlists (Home), and the per-chat dedup seen-set (M2).
 enum Persistence {
     private static let defaults = UserDefaults.standard
 

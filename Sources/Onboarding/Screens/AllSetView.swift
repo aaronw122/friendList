@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Step 8 — "All set" completion screen. Renders inside the sheet (centered column).
 struct AllSetView: View {
     @Environment(OnboardingState.self) private var state
     @Environment(\.openURL) private var openURL
@@ -9,8 +8,7 @@ struct AllSetView: View {
         state.name.isEmpty ? state.selectedChatName : state.name
     }
 
-    /// The playlist created in THIS run (not necessarily lists.last, since a
-    /// re-created earlier playlist updates in place). Its externalURL opens Spotify.
+    /// Resolve by this run’s URL because recreating an earlier playlist may update it in place.
     private var createdURL: String {
         state.lastCreatedURL
     }

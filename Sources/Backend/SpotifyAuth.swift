@@ -21,10 +21,7 @@ enum SpotifyError: LocalizedError {
     }
 }
 
-/// Token lifecycle for Authorization Code + PKCE. Serializes refreshes (single-use
-/// rotating refresh tokens) and — critically — only overwrites the stored refresh
-/// token when Spotify actually returns a new one; overwriting with an absent field
-/// permanently bricks auth.
+/// Serializes rotating-token refreshes and retains the stored token when Spotify omits a replacement.
 actor SpotifyAuth {
     private let clientID: String
     private var accessToken: String?
@@ -40,7 +37,6 @@ actor SpotifyAuth {
 
     // MARK: Interactive authorization (PKCE + loopback)
 
-    /// Run the full browser authorization and store the resulting refresh token.
     func authorize(scopes: [String]) async throws {
         let verifier = PKCE.makeVerifier()
         let challenge = PKCE.challenge(for: verifier)
@@ -59,7 +55,7 @@ actor SpotifyAuth {
         let authorizeURL = comps.url!
 
         let server = LoopbackAuthServer(port: SpotifyConfig.loopbackPort)
-        // Start listening, THEN open the browser, so we can't miss a fast redirect.
+        // Listen before opening the browser so a fast redirect cannot be missed.
         let redirectTask = Task { try await server.waitForRedirect() }
         defer { redirectTask.cancel() }
         await MainActor.run { _ = NSWorkspace.shared.open(authorizeURL) }
@@ -75,7 +71,6 @@ actor SpotifyAuth {
 
     // MARK: Token access
 
-    /// A valid (non-expired) access token, refreshing if necessary.
     func validAccessToken() async throws -> String {
         if let token = accessToken, Date() < expiresAt.addingTimeInterval(-60) {
             return token
@@ -85,10 +80,7 @@ actor SpotifyAuth {
         return token
     }
 
-    /// Coalesce concurrent refreshes onto a single in-flight Task. Actors are
-    /// reentrant across `await`, so without this two callers past expiry could each
-    /// read and SPEND the same single-use rotating refresh token, invalidating the
-    /// grant. Everyone awaits the same Task, so the token is spent once.
+    /// Actor reentrancy can spend a rotating refresh token twice, so concurrent callers share one refresh task.
     private func refreshCoalesced() async throws {
         if let inFlight = refreshInFlight {
             try await inFlight.value
@@ -117,7 +109,6 @@ actor SpotifyAuth {
         ]
         let token = try await postToken(form)
         apply(token)
-        // First authorization always returns a refresh token.
         if let rt = token.refresh_token, !rt.isEmpty {
             Keychain.set(rt, account: Keychain.Account.refreshToken)
         }
@@ -134,8 +125,7 @@ actor SpotifyAuth {
         ]
         let token = try await postToken(form)
         apply(token)
-        // GUARD: only overwrite the stored refresh token when a NEW one is present.
-        // Spotify's refresh response often omits it; overwriting with nil bricks auth.
+        // Spotify may omit refresh_token; replacing the stored token only when present prevents permanent auth loss.
         if let rt = token.refresh_token, !rt.isEmpty {
             Keychain.set(rt, account: Keychain.Account.refreshToken)
         }
@@ -181,7 +171,6 @@ actor SpotifyAuth {
     }
 }
 
-/// Race an async operation against a timeout.
 func withTimeout<T: Sendable>(seconds: Double, _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
     try await withThrowingTaskGroup(of: T.self) { group in
         group.addTask { try await operation() }

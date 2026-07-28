@@ -1,21 +1,15 @@
 import SpriteKit
 import AppKit
 
-/// The persistent falling-objects stage. Objects drop from above the top edge,
-/// collide, and settle. The user can grab and fling any object with the cursor.
-/// Feel is tuned to the README's Matter.js reference values (SpriteKit units differ).
 final class StageScene: SKScene {
 
-    /// Assigned by `PhysicsStageView`; registering closures is safe at any time.
     weak var bridge: PhysicsBridge? {
         didSet { registerBridge() }
     }
 
-    /// Live objects in stable spawn order. `popEveryOther` walks this order.
     private var objects: [SKNode] = []
     private var dropGeneration = 0
 
-    // Drag / fling state
     private var grabbed: SKNode?
     private var lastPoint: CGPoint = .zero
     private var lastTime: TimeInterval = 0
@@ -29,7 +23,6 @@ final class StageScene: SKScene {
         anchorPoint = CGPoint(x: 0, y: 0)
         backgroundColor = .clear
         scaleMode = .resizeFill
-        // Gentle-but-real fall tuned to the Matter.js gravity-Y 1.05 reference.
         physicsWorld.gravity = CGVector(dx: 0, dy: -8)
         buildWalls()
         registerBridge()
@@ -43,8 +36,6 @@ final class StageScene: SKScene {
 
     // MARK: Walls
 
-    /// Static floor / left / right edges plus a high ceiling well above the top,
-    /// so objects can spawn off-screen and fall in.
     private func buildWalls() {
         enumerateChildNodes(withName: "wall") { node, _ in node.removeFromParent() }
         let w = size.width
@@ -62,16 +53,14 @@ final class StageScene: SKScene {
             addChild(node)
         }
 
-        wall(CGPoint(x: 0, y: 0), CGPoint(x: w, y: 0))                 // floor
-        wall(CGPoint(x: 0, y: 0), CGPoint(x: 0, y: ceiling))          // left
-        wall(CGPoint(x: w, y: 0), CGPoint(x: w, y: ceiling))          // right
-        wall(CGPoint(x: 0, y: ceiling), CGPoint(x: w, y: ceiling))    // ceiling
+        wall(CGPoint(x: 0, y: 0), CGPoint(x: w, y: 0))
+        wall(CGPoint(x: 0, y: 0), CGPoint(x: 0, y: ceiling))
+        wall(CGPoint(x: w, y: 0), CGPoint(x: w, y: ceiling))
+        wall(CGPoint(x: 0, y: ceiling), CGPoint(x: w, y: ceiling))
     }
 
     // MARK: Spawning
 
-    /// Clears the world and (re)drops all 14 objects: staggered above the top,
-    /// random small angle. First at 100ms, then one every 65ms.
     private func spawnObjects() {
         removeAllObjects()
         dropGeneration += 1
@@ -93,7 +82,6 @@ final class StageScene: SKScene {
         let node = PhysicsObjects.makeNode(spec)
         let x = CGFloat.random(in: spawnInset...(size.width - spawnInset))
         let y = size.height + CGFloat.random(in: 0...160)
-        // Upright-biased objects (the iMessage bubble) lock level 67% of the time.
         let upright = spec.uprightBias && CGFloat.random(in: 0..<1) < 0.67
         node.position = CGPoint(x: x, y: y)
         node.zRotation = upright ? 0 : CGFloat.random(in: -0.6...0.6)
@@ -106,7 +94,7 @@ final class StageScene: SKScene {
     }
 
     private func removeAllObjects() {
-        removeAllActions() // cancel any pending staggered spawns
+        removeAllActions()
         for node in objects { node.removeFromParent() }
         objects.removeAll()
         grabbed = nil
@@ -120,8 +108,6 @@ final class StageScene: SKScene {
         bridge?.onReset = { [weak self] in self?.spawnObjects() }
     }
 
-    /// Remove every other object (index % 2 == 0) with a ~340ms pop:
-    /// scale 1 → 1.45 → 1.7 with fade to 0, staggered 55ms apart.
     private func popEveryOther() {
         let toPop = objects.enumerated().filter { $0.offset % 2 == 0 }.map { $0.element }
         for (i, node) in toPop.enumerated() {
@@ -158,11 +144,7 @@ final class StageScene: SKScene {
     override func mouseDragged(with event: NSEvent) {
         guard let node = grabbed else { return }
         let raw = event.location(in: self)
-        // Keep the dragged object inside the walls. The physics edges only stop
-        // physics-driven motion; a hand-assigned position would otherwise sail
-        // straight through the floor/sides. Clamp so the object's edges — not its
-        // center — stop at each wall, using its current accumulated frame to get
-        // the half-extents. Top is left free (the ceiling sits far above-screen).
+        // Direct drag positions bypass physics edges, so clamp the object frame to the walls.
         let frame = node.calculateAccumulatedFrame()
         let leftInset = node.position.x - frame.minX
         let rightInset = frame.maxX - node.position.x
@@ -189,6 +171,5 @@ final class StageScene: SKScene {
         grabbed = nil
     }
 
-    // Scroll-wheel capture disabled.
     override func scrollWheel(with event: NSEvent) {}
 }

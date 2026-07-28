@@ -1,7 +1,5 @@
 import Foundation
 
-/// A fake `MessagesReading` for Xcode previews and for running the UI without
-/// Full Disk Access. Returns the original handoff sample chats and a canned scan.
 struct SampleMessagesReader: MessagesReading {
     var grantsAccess: Bool = true
 

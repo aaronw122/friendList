@@ -1,32 +1,24 @@
 import Foundation
 
-/// Result of creating + populating a playlist.
 struct SpotifyPlaylistResult: Sendable {
     let id: String
     let url: String
     let added: Int
 }
 
-/// M2 seam the UI talks to. Sendable so it can live on the state object and be
-/// called from async UI tasks.
 protocol SpotifyProviding: Sendable {
-    /// Interactive PKCE login for the given client id; returns the display name.
     func connect(clientID: String) async throws -> String
-    /// Create a private playlist and append the (already de-duplicated) track URIs
-    /// in ≤100 batches, reporting progress as (fraction, label).
     func createPlaylist(name: String,
                         description: String,
                         trackURIs: [String],
                         progress: @escaping @Sendable (Double, String) -> Void) async throws -> SpotifyPlaylistResult
 }
 
-/// Real implementation. An actor because it caches the authenticated session
-/// (`SpotifyAuth`) between the connect step and the later create step.
 actor SpotifyService: SpotifyProviding {
     private var auth: SpotifyAuth?
 
     func connect(clientID: String) async throws -> String {
-        // Changing the client id invalidates any stored tokens.
+        // Changing the client ID invalidates its authenticated session and stored tokens.
         if Keychain.get(account: Keychain.Account.clientID) != clientID {
             Keychain.clearTokens()
             Keychain.set(clientID, account: Keychain.Account.clientID)
@@ -66,7 +58,6 @@ actor SpotifyService: SpotifyProviding {
     }
 }
 
-/// Preview / no-network fake.
 struct FakeSpotify: SpotifyProviding {
     func connect(clientID: String) async throws -> String { "Preview User" }
     func createPlaylist(name: String, description: String, trackURIs: [String],

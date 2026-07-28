@@ -1,30 +1,14 @@
 import Foundation
 
-/// Extracts Spotify track ids (and counts YouTube links) from raw message text
-/// and from `attributedBody` / `payload_data` blobs.
-///
-/// The blob path is deliberately a **byte-scan**, per the tribunal ruling: the
-/// `attributedBody` blob is a non-keyed `streamtyped` archive that
-/// `NSAttributedString(data:documentAttributes:)` cannot decode. But any URL
-/// inside it is a contiguous ASCII run, and a lossy UTF-8 decode
-/// (`String(decoding:as:)`, which maps invalid bytes to U+FFFD) can never
-/// corrupt an all-ASCII `https://open.spotify.com/track/…` or `spotify:track:…`
-/// substring — so a regex over the decoded text finds them reliably and is
-/// robust across macOS versions.
+/// Lossy UTF-8 byte scanning preserves embedded ASCII URLs that streamtyped attributedBody archives cannot decode.
 protocol LinkParsing: Sendable {
-    /// Canonical `spotify:track:{id}` URIs found, in order, with duplicates kept
-    /// (dedup happens per-chat upstream).
     func spotifyTrackURIs(in text: String) -> [String]
-    /// Number of YouTube video links (counted, not collected — v2 feature).
     func youTubeCount(in text: String) -> Int
-    /// Lossily decode a blob to text for scanning.
     func decode(blob: Data) -> String
 }
 
 struct LinkParser: LinkParsing {
-    // Spotify track ids are 22 base62 chars. Allow the `/intl-xx/` locale prefix
-    // and ignore any `?si=` query. Both the open.spotify.com URL and the
-    // `spotify:track:` URI forms are matched.
+    // Spotify IDs are 22 base62 characters; match locale-prefixed URLs and spotify:track URIs.
     private static let spotifyURL = try! NSRegularExpression(
         pattern: #"open\.spotify\.com/(?:intl-[a-z]{2}/)?track/([A-Za-z0-9]{22})"#,
         options: [.caseInsensitive])

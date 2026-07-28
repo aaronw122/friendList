@@ -1,11 +1,6 @@
 import SwiftUI
 
-// Step 5 — OAuth consent.
-//
-// The granted scope rows below MUST accurately mirror SpotifyConfig.scopes:
-//   playlist-modify-private → "Create and edit your private playlists"
-//   playlist-read-private   → "Read your playlists — to skip songs already added"
-//   user-library-read       → "Check your Liked Songs — to skip duplicates"
+// Displayed grants must exactly mirror SpotifyConfig.scopes.
 struct OAuthConsentView: View {
     @Environment(OnboardingState.self) private var state
 
@@ -50,8 +45,6 @@ struct OAuthConsentView: View {
                 onBack: nil,
                 primaryTitle: state.connecting ? "Waiting for Spotify…" : "Authorize with Spotify",
                 primaryEnabled: !state.connecting,
-                // Real PKCE authorization via loopback (opens the browser). On a
-                // successful callback connectSpotify() sets connected and advances.
                 onPrimary: {
                     Task { await state.connectSpotify() }
                 }
@@ -85,9 +78,7 @@ struct OAuthConsentView: View {
 
 // MARK: - Pieces
 
-/// The Spotify mark: a solid green circle with three upward-bulging sound-wave
-/// arcs (widest/highest at top, narrowing and descending) drawn in Spotify black.
-/// Production: ship the official Spotify logo asset per their brand guidelines.
+/// Replace this approximation with the official Spotify logo asset for production.
 private struct SpotifyMark: View {
     var size: CGFloat = 66
 
@@ -98,7 +89,6 @@ private struct SpotifyMark: View {
             let s = min(canvasSize.width, canvasSize.height)
             let cx = canvasSize.width / 2
 
-            // (centerY factor, width factor, stroke width) — top arc is widest/highest.
             let arcs: [(cy: CGFloat, w: CGFloat, stroke: CGFloat)] = [
                 (0.40, 0.60, 4.2),
                 (0.52, 0.46, 3.6),
@@ -110,7 +100,6 @@ private struct SpotifyMark: View {
                 let cy = arc.cy * s
                 let x0 = cx - width / 2
                 let x1 = cx + width / 2
-                // Convex up: control point raised above the endpoints.
                 let lift = 0.28 * width
                 var path = Path()
                 path.move(to: CGPoint(x: x0, y: cy))
@@ -132,7 +121,6 @@ private struct SpotifyMark: View {
     }
 }
 
-/// A scope line: a 6pt dot + 12.5pt text.
 private struct ScopeRow: View {
     let dot: Color
     let text: String

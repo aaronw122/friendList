@@ -1,17 +1,12 @@
 import Foundation
 import Network
 
-/// A one-shot local HTTP listener on `127.0.0.1:<port>` that catches the OAuth
-/// redirect. Because Spotify rejects custom URL schemes for new apps, the
-/// authorize URL opens in the user's browser and Spotify redirects back to this
-/// loopback address; we read the `?code=…&state=…` off the first request line,
-/// return a small "you can close this tab" page, and tear the listener down.
+/// Spotify rejects custom schemes for new apps, so OAuth returns through a one-shot 127.0.0.1 listener.
 final class LoopbackAuthServer {
     private let port: UInt16
     private var listener: NWListener?
 
-    // Continuation state, guarded so we resume exactly once (redirect / failure /
-    // cancellation all race).
+    // Redirect, failure, and cancellation can race, so the continuation must resume exactly once.
     private let lock = NSLock()
     private var continuation: CheckedContinuation<[String: String], Error>?
     private var finished = false
@@ -29,7 +24,6 @@ final class LoopbackAuthServer {
         }
     }
 
-    /// Resume exactly once and always tear the listener down.
     private func finish(_ params: [String: String]?, _ error: Error?) {
         lock.lock()
         guard !finished else { lock.unlock(); return }
@@ -43,9 +37,7 @@ final class LoopbackAuthServer {
         else { cont?.resume(throwing: error ?? AuthServerError.timedOut) }
     }
 
-    /// Start listening and resume when the *auth* redirect arrives (or on failure
-    /// or Task cancellation — e.g. the caller's timeout). Returns the parsed query
-    /// parameters (e.g. `["code": …, "state": …]`).
+    /// Wait for the auth redirect or cancellation, then return its query parameters.
     func waitForRedirect() async throws -> [String: String] {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { cont in
@@ -72,8 +64,7 @@ final class LoopbackAuthServer {
                         connection.start(queue: .global(qos: .userInitiated))
                         Self.readRequestLine(connection) { query in
                             Self.respondAndClose(connection)
-                            // Ignore favicon/probe/preconnect requests that reach the
-                            // port first — only the redirect carrying code/error counts.
+                            // Ignore probes and preconnects; only a request carrying code or error is the OAuth redirect.
                             if query["code"] != nil || query["error"] != nil {
                                 self?.finish(query, nil)
                             }
@@ -89,14 +80,12 @@ final class LoopbackAuthServer {
         }
     }
 
-    // Read enough bytes to capture the HTTP request line and parse its query.
     private static func readRequestLine(_ conn: NWConnection, _ done: @escaping ([String: String]) -> Void) {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 8192) { data, _, _, _ in
             guard let data, let request = String(data: data, encoding: .utf8),
                   let line = request.split(separator: "\r\n", maxSplits: 1).first else {
                 done([:]); return
             }
-            // "GET /auth-callback?code=…&state=… HTTP/1.1"
             let parts = line.split(separator: " ")
             guard parts.count >= 2 else { done([:]); return }
             done(parseQuery(String(parts[1])))

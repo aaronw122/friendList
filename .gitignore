@@ -5,6 +5,7 @@ conversations/
 
 # Xcode / build
 DerivedData/
+.dd/
 build/
 *.xcuserstate
 xcuserdata/

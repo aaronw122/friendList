@@ -3,16 +3,6 @@ import SwiftUI
 struct OnboardingContainer: View {
     @State private var state = OnboardingState()
     @State private var physics = PhysicsBridge()
-    @State private var visibleStep = 1
-    @State private var outgoingStep: Int?
-    @State private var outgoingOffset: CGFloat = 0
-    @State private var transitionID = 0
-
-    init() {
-        let state = OnboardingState()
-        _state = State(initialValue: state)
-        _visibleStep = State(initialValue: state.step)
-    }
 
     var body: some View {
         ZStack {
@@ -24,11 +14,10 @@ struct OnboardingContainer: View {
                 .animation(.easeInOut(duration: 0.35), value: state.step >= 2)
                 .zIndex(0)
 
-            ForEach(renderedSteps, id: \.self) { step in
-                screen(for: step)
-                    .offset(y: step == outgoingStep ? outgoingOffset : 0)
-                    .zIndex(step == outgoingStep ? 20 : 10)
-            }
+            screen(for: state.step)
+                .id(state.step)
+                .transition(pushTransition)
+                .zIndex(10)
 
             if state.step >= 2 {
                 SheetTopProgressBar(fraction: state.progressFraction)
@@ -51,9 +40,6 @@ struct OnboardingContainer: View {
         .frame(width: Geometry.contentWidth, height: Geometry.contentHeight)
         .environment(state)
         .environment(\.physicsBridge, physics)
-        .onChange(of: state.step) { _, newStep in
-            beginTransition(to: newStep)
-        }
         .simultaneousGesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
@@ -64,47 +50,12 @@ struct OnboardingContainer: View {
         )
     }
 
-    private func beginTransition(to newStep: Int) {
-        let previousStep = visibleStep
-        let targetOffset = state.goingBack ? Geometry.contentHeight : -Geometry.contentHeight
-
-        transitionID += 1
-        let currentTransitionID = transitionID
-
-        var transaction = Transaction()
-        transaction.animation = nil
-        withTransaction(transaction) {
-            outgoingStep = previousStep
-            outgoingOffset = 0
-            visibleStep = newStep
-        }
-
-        Task { @MainActor in
-            await Task.yield()
-            guard transitionID == currentTransitionID else { return }
-
-            withAnimation(
-                .spring(response: 0.5, dampingFraction: 0.82),
-                completionCriteria: .logicallyComplete
-            ) {
-                outgoingOffset = targetOffset
-            } completion: {
-                guard transitionID == currentTransitionID else { return }
-                var transaction = Transaction()
-                transaction.animation = nil
-                withTransaction(transaction) {
-                    outgoingStep = nil
-                    outgoingOffset = 0
-                }
-            }
-        }
-    }
-
-    private var renderedSteps: [Int] {
-        if let outgoingStep {
-            return [visibleStep, outgoingStep]
-        }
-        return [visibleStep]
+    // Vertical push: forward pushes up, back pushes down; go()'s spring drives it.
+    private var pushTransition: AnyTransition {
+        .asymmetric(
+            insertion: .move(edge: state.goingBack ? .top : .bottom),
+            removal:   .move(edge: state.goingBack ? .bottom : .top)
+        )
     }
 
     @ViewBuilder private func screen(for step: Int) -> some View {

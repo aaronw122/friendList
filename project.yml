@@ -40,6 +40,10 @@ targets:
         ENABLE_PREVIEWS: YES
         COMBINE_HIDPI_IMAGES: YES
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
+      configs:
+        Debug:
+          # Self-signed certificates have no Team ID, so hosted tests require Debug library validation off.
+          ENABLE_HARDENED_RUNTIME: NO
     entitlements:
       path: App/FriendList.entitlements
       properties:
@@ -56,4 +60,3 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.friendlist.tests
         GENERATE_INFOPLIST_FILE: YES
-        CODE_SIGNING_ALLOWED: NO

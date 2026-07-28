@@ -88,7 +88,7 @@ final class OnboardingState {
             self.spotify = isPreview ? FakeSpotify() : SpotifyService()
         }
         self.persistence = persistence
-        self.lists = persistence.loadPlaylists().map {
+        self.lists = (persistence.loadPlaylists() ?? []).map {
             Playlist(name: $0.name, songCount: $0.songCount, chatName: $0.chatName,
                      externalURL: $0.externalURL, spotifyID: $0.spotifyID, chatGUID: $0.chatGUID)
         }
@@ -397,7 +397,7 @@ final class OnboardingState {
             lists.append(pl)
         }
         lastCreatedURL = externalURL
-        persistAllPlaylists()
+        persistPlaylist(pl)
         if let guid = pickedChat?.guid {
             persistence.recordSeen(chatGUID: guid, uris: scannedTrackURIs)
         }
@@ -405,12 +405,12 @@ final class OnboardingState {
         go(to: 9)
     }
 
-    /// Persist each playlist with its own Spotify ID and chat GUID to prevent cross-row association.
-    private func persistAllPlaylists() {
-        persistence.savePlaylists(lists.map {
-            SavedPlaylist(spotifyID: $0.spotifyID, name: $0.name, songCount: $0.songCount,
-                          chatName: $0.chatName, chatGUID: $0.chatGUID, externalURL: $0.externalURL)
-        })
+    private func persistPlaylist(_ playlist: Playlist) {
+        persistence.upsertPlaylists([
+            SavedPlaylist(spotifyID: playlist.spotifyID, name: playlist.name,
+                          songCount: playlist.songCount, chatName: playlist.chatName,
+                          chatGUID: playlist.chatGUID, externalURL: playlist.externalURL)
+        ])
     }
 
     func goHome() { go(to: 0) }

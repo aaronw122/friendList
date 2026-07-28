@@ -106,8 +106,19 @@ private final class PersistenceFake: PersistenceProviding {
     var savedPlaylists: [SavedPlaylist] = []
     var seenURIs: [String: Set<String>] = [:]
 
-    func loadPlaylists() -> [SavedPlaylist] { savedPlaylists }
-    func savePlaylists(_ list: [SavedPlaylist]) { savedPlaylists = list }
+    func loadPlaylists() -> [SavedPlaylist]? { savedPlaylists }
+    func upsertPlaylists(_ updates: [SavedPlaylist]) {
+        for update in updates {
+            if let i = savedPlaylists.firstIndex(where: {
+                update.spotifyID.isEmpty ? ($0.name == update.name && $0.chatGUID == update.chatGUID)
+                                         : $0.spotifyID == update.spotifyID
+            }) {
+                savedPlaylists[i] = update
+            } else {
+                savedPlaylists.append(update)
+            }
+        }
+    }
     func recordSeen(chatGUID: String, uris: [String]) { seenURIs[chatGUID, default: []].formUnion(uris) }
 }
 

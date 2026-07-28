@@ -11,8 +11,8 @@ struct SavedPlaylist: Codable, Hashable {
 
 protocol PersistenceProviding {
     var didOnboard: Bool { get set }
-    func loadPlaylists() -> [SavedPlaylist]
-    func savePlaylists(_ list: [SavedPlaylist])
+    func loadPlaylists() -> [SavedPlaylist]?
+    func upsertPlaylists(_ updates: [SavedPlaylist])
     func recordSeen(chatGUID: String, uris: [String])
 }
 
@@ -22,8 +22,8 @@ struct AppPersistence: PersistenceProviding {
         nonmutating set { Persistence.didOnboard = newValue }
     }
 
-    func loadPlaylists() -> [SavedPlaylist] { Persistence.loadPlaylists() }
-    func savePlaylists(_ list: [SavedPlaylist]) { Persistence.savePlaylists(list) }
+    func loadPlaylists() -> [SavedPlaylist]? { Persistence.loadPlaylists() }
+    func upsertPlaylists(_ updates: [SavedPlaylist]) { Persistence.upsertPlaylists(updates) }
     func recordSeen(chatGUID: String, uris: [String]) { Persistence.recordSeen(chatGUID: chatGUID, uris: uris) }
 }
 
@@ -46,15 +46,68 @@ enum Persistence {
 
     // MARK: Created playlists (Home)
     private static let kPlaylists = "friendlist.playlists"
-    static func loadPlaylists() -> [SavedPlaylist] {
-        guard let data = defaults.data(forKey: kPlaylists),
-              let list = try? JSONDecoder().decode([SavedPlaylist].self, from: data)
-        else { return [] }
-        return list
+    private static let kPlaylistsBackup = "friendlist.playlists.bak"
+    private static let kPlaylistsCorrupt = "friendlist.playlists.corrupt"
+
+    static func loadPlaylists() -> [SavedPlaylist]? {
+        switch playlistStore() {
+        case .absent:
+            return []
+        case .loaded(let list):
+            return list
+        case .undecodable(let raw):
+            defaults.set(raw, forKey: kPlaylistsCorrupt)
+            return nil
+        }
     }
-    static func savePlaylists(_ list: [SavedPlaylist]) {
+
+    static func upsertPlaylists(_ updates: [SavedPlaylist]) {
+        guard !updates.isEmpty else { return }
+
+        let stored = playlistStore()
+        var list: [SavedPlaylist]
+        switch stored {
+        case .absent:
+            list = []
+        case .loaded(let current):
+            list = current
+        case .undecodable(let raw):
+            defaults.set(raw, forKey: kPlaylistsCorrupt)
+            list = []
+        }
+
+        for update in updates {
+            if let index = list.firstIndex(where: { playlistsMatch($0, update) }) {
+                list[index] = update
+            } else {
+                list.append(update)
+            }
+        }
+
         guard let data = try? JSONEncoder().encode(list) else { return }
+        if let prior = defaults.object(forKey: kPlaylists) {
+            defaults.set(prior, forKey: kPlaylistsBackup)
+        }
         defaults.set(data, forKey: kPlaylists)
+    }
+
+    private enum PlaylistStore {
+        case absent
+        case loaded([SavedPlaylist])
+        case undecodable(Any)
+    }
+
+    private static func playlistStore() -> PlaylistStore {
+        guard let raw = defaults.object(forKey: kPlaylists) else { return .absent }
+        guard let data = raw as? Data,
+              let list = try? JSONDecoder().decode([SavedPlaylist].self, from: data)
+        else { return .undecodable(raw) }
+        return .loaded(list)
+    }
+
+    private static func playlistsMatch(_ lhs: SavedPlaylist, _ rhs: SavedPlaylist) -> Bool {
+        if !rhs.spotifyID.isEmpty { return lhs.spotifyID == rhs.spotifyID }
+        return lhs.name == rhs.name && lhs.chatGUID == rhs.chatGUID
     }
 
     // MARK: Per-chat dedup seen-set (M2 in-app dedup)

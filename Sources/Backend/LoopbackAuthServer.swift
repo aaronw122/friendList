@@ -2,16 +2,23 @@ import Foundation
 import Network
 
 /// Spotify rejects custom schemes for new apps, so OAuth returns through a one-shot 127.0.0.1 listener.
-final class LoopbackAuthServer {
+final class LoopbackAuthServer: @unchecked Sendable {
     private let port: UInt16
+    private let path: String
+    private let expectedState: String
     private var listener: NWListener?
 
     // Redirect, failure, and cancellation can race, so the continuation must resume exactly once.
     private let lock = NSLock()
     private var continuation: CheckedContinuation<[String: String], Error>?
+    private var pending: Result<[String: String], Error>?
     private var finished = false
 
-    init(port: UInt16) { self.port = port }
+    init(port: UInt16, path: String, expectedState: String) {
+        self.port = port
+        self.path = path
+        self.expectedState = expectedState
+    }
 
     enum AuthServerError: LocalizedError {
         case listenerFailed(String)
@@ -30,78 +37,101 @@ final class LoopbackAuthServer {
         finished = true
         let cont = continuation
         continuation = nil
+        let result: Result<[String: String], Error> =
+            params.map { .success($0) } ?? .failure(error ?? AuthServerError.timedOut)
+        // Buffer a result that lands before waitForRedirect registers its continuation.
+        if cont == nil { pending = result }
         lock.unlock()
 
         listener?.cancel()
-        if let params { cont?.resume(returning: params) }
-        else { cont?.resume(throwing: error ?? AuthServerError.timedOut) }
+        cont?.resume(with: result)
     }
 
-    /// Wait for the auth redirect or cancellation, then return its query parameters.
+    /// Start listening before the browser opens so a fast redirect can't be missed.
+    func start() throws {
+        let params = NWParameters.tcp
+        params.allowLocalEndpointReuse = true
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+            throw AuthServerError.listenerFailed("bad port")
+        }
+        // Loopback-only bind: nothing off-machine can ever reach the callback socket.
+        params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.loopback), port: nwPort)
+
+        let listener: NWListener
+        do { listener = try NWListener(using: params) }
+        catch { throw AuthServerError.listenerFailed(error.localizedDescription) }
+        self.listener = listener
+
+        listener.stateUpdateHandler = { [weak self] state in
+            if case .failed(let error) = state {
+                self?.finish(nil, AuthServerError.listenerFailed(error.localizedDescription))
+            }
+        }
+        listener.newConnectionHandler = { [weak self] connection in
+            connection.start(queue: .global(qos: .userInitiated))
+            Self.readRequestTarget(connection) { target in
+                Self.respondAndClose(connection)
+                guard let self else { return }
+                let (reqPath, query) = Self.splitTarget(target)
+                // Only the redirect path carrying our own state counts; forged requests can't abort the flow.
+                guard reqPath == self.path, query["state"] == self.expectedState else { return }
+                if query["code"] != nil || query["error"] != nil {
+                    self.finish(query, nil)
+                }
+            }
+        }
+        listener.start(queue: .global(qos: .userInitiated))
+    }
+
+    /// Tear down the listener and resume any waiter; safe to call more than once.
+    func stop() {
+        finish(nil, CancellationError())
+    }
+
+    /// Wait for the auth redirect; task cancellation tears the wait down immediately.
     func waitForRedirect() async throws -> [String: String] {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { cont in
                 lock.lock()
+                if let result = pending {
+                    pending = nil
+                    lock.unlock()
+                    cont.resume(with: result)
+                    return
+                }
                 if finished { lock.unlock(); cont.resume(throwing: CancellationError()); return }
                 continuation = cont
                 lock.unlock()
-
-                do {
-                    let params = NWParameters.tcp
-                    params.allowLocalEndpointReuse = true
-                    guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-                        finish(nil, AuthServerError.listenerFailed("bad port")); return
-                    }
-                    let listener = try NWListener(using: params, on: nwPort)
-                    self.listener = listener
-
-                    listener.stateUpdateHandler = { [weak self] state in
-                        if case .failed(let error) = state {
-                            self?.finish(nil, AuthServerError.listenerFailed(error.localizedDescription))
-                        }
-                    }
-                    listener.newConnectionHandler = { [weak self] connection in
-                        connection.start(queue: .global(qos: .userInitiated))
-                        Self.readRequestLine(connection) { query in
-                            Self.respondAndClose(connection)
-                            // Ignore probes and preconnects; only a request carrying code or error is the OAuth redirect.
-                            if query["code"] != nil || query["error"] != nil {
-                                self?.finish(query, nil)
-                            }
-                        }
-                    }
-                    listener.start(queue: .global(qos: .userInitiated))
-                } catch {
-                    finish(nil, AuthServerError.listenerFailed(error.localizedDescription))
-                }
             }
         } onCancel: {
             finish(nil, CancellationError())
         }
     }
 
-    private static func readRequestLine(_ conn: NWConnection, _ done: @escaping ([String: String]) -> Void) {
+    private static func readRequestTarget(_ conn: NWConnection, _ done: @escaping (String) -> Void) {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 8192) { data, _, _, _ in
             guard let data, let request = String(data: data, encoding: .utf8),
                   let line = request.split(separator: "\r\n", maxSplits: 1).first else {
-                done([:]); return
+                done(""); return
             }
             let parts = line.split(separator: " ")
-            guard parts.count >= 2 else { done([:]); return }
-            done(parseQuery(String(parts[1])))
+            guard parts.count >= 2 else { done(""); return }
+            done(String(parts[1]))
         }
     }
 
-    private static func parseQuery(_ target: String) -> [String: String] {
-        guard let queryPart = target.split(separator: "?", maxSplits: 1).dropFirst().first else { return [:] }
+    private static func splitTarget(_ target: String) -> (path: String, query: [String: String]) {
+        let pieces = target.split(separator: "?", maxSplits: 1)
+        let path = pieces.first.map(String.init) ?? ""
+        guard pieces.count > 1 else { return (path, [:]) }
         var result: [String: String] = [:]
-        for pair in queryPart.split(separator: "&") {
+        for pair in pieces[1].split(separator: "&") {
             let kv = pair.split(separator: "=", maxSplits: 1)
             guard let key = kv.first else { continue }
             let value = kv.count > 1 ? String(kv[1]) : ""
             result[String(key)] = value.removingPercentEncoding ?? value
         }
-        return result
+        return (path, result)
     }
 
     private static func respondAndClose(_ conn: NWConnection) {

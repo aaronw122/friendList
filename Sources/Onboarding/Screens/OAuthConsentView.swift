@@ -41,8 +41,8 @@ struct OAuthConsentView: View {
             }
 
             SheetFooter(
-                backTitle: nil,
-                onBack: nil,
+                backTitle: state.connecting ? "Cancel" : nil,
+                onBack: state.connecting ? { state.cancelConnect() } : nil,
                 primaryTitle: state.connecting ? "Waiting for Spotify…" : "Authorize with Spotify",
                 primaryEnabled: !state.connecting,
                 onPrimary: {

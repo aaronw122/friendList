@@ -91,13 +91,16 @@ actor SpotifyAuth {
         ]
         let authorizeURL = comps.url!
 
-        let server = LoopbackAuthServer(port: SpotifyConfig.loopbackPort)
+        let server = LoopbackAuthServer(port: SpotifyConfig.loopbackPort,
+                                        path: URL(string: SpotifyConfig.redirectURI)!.path,
+                                        expectedState: state)
         // Start the loopback listener before opening the browser to avoid missing a fast redirect.
-        let redirectTask = Task { try await server.waitForRedirect() }
-        defer { redirectTask.cancel() }
+        try server.start()
+        defer { server.stop() }
         await MainActor.run { _ = NSWorkspace.shared.open(authorizeURL) }
 
-        let params = try await withTimeout(seconds: 300) { try await redirectTask.value }
+        // The wait is cancellable, so the timeout (or a cancelled task) tears it down immediately.
+        let params = try await withTimeout(seconds: 300) { try await server.waitForRedirect() }
 
         if let err = params["error"] { throw SpotifyError.authDenied(err) }
         guard params["state"] == state else { throw SpotifyError.stateMismatch }

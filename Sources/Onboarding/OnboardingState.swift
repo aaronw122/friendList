@@ -68,6 +68,7 @@ final class OnboardingState {
     @ObservationIgnored private var createInFlight = false
     @ObservationIgnored private var chatsLoading = false
     @ObservationIgnored private var restoreTask: Task<SpotifyRestoreResult, Never>?
+    @ObservationIgnored private var connectTask: Task<String, Error>?
 
     private struct SpotifyRestoreResult: Sendable {
         let clientID: String?
@@ -302,8 +303,13 @@ final class OnboardingState {
         guard !id.isEmpty, !connecting else { return }
         connecting = true
         connectError = nil
+        // Held as a task so cancelConnect() can tear down the browser wait.
+        let spotify = self.spotify
+        let task = Task { try await spotify.connect(clientID: id) }
+        connectTask = task
+        defer { connectTask = nil }
         do {
-            let name = try await spotify.connect(clientID: id)
+            let name = try await task.value
             // Consent and reconnect reset the six-month refresh-token nudge clock.
             persistence.authorizationDate = Date()
             spotifyDisplayName = name
@@ -311,10 +317,17 @@ final class OnboardingState {
             connecting = false
             // Browser auth may finish after navigation, so advance only from the consent screen.
             if step == fromStep { advance() }
+        } catch is CancellationError {
+            connecting = false
         } catch {
             connecting = false
             connectError = error.localizedDescription
         }
+    }
+
+    @MainActor
+    func cancelConnect() {
+        connectTask?.cancel()
     }
 
     @MainActor

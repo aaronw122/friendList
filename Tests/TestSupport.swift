@@ -71,6 +71,8 @@ final class SpotifyFake: SpotifyProviding, @unchecked Sendable {
     var restored: SpotifySession?
     var restoreError: Error?
     var createError: Error?
+    /// Nanoseconds `connect` sleeps before returning — a cancellable stand-in for the browser wait.
+    var connectDelay: UInt64?
     /// Throw `failure` once this many batches have landed (0 = before the first batch). nil never throws.
     var failAfterBatches: Int?
     var failure: Error = SpotifyError.http(500, "server error")
@@ -99,7 +101,10 @@ final class SpotifyFake: SpotifyProviding, @unchecked Sendable {
         return restored
     }
 
-    func connect(clientID: String) async throws -> String { "Connected User" }
+    func connect(clientID: String) async throws -> String {
+        if let connectDelay { try await Task.sleep(nanoseconds: connectDelay) }
+        return "Connected User"
+    }
 
     func createPlaylist(name: String, description: String, trackURIs: [String],
                         progress: @escaping @Sendable (Double, String) -> Void) async throws -> SpotifyPlaylistResult {

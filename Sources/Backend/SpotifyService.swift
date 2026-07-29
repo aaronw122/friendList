@@ -19,7 +19,6 @@ protocol SpotifyProviding: Sendable {
                         description: String,
                         trackURIs: [String],
                         progress: @escaping @Sendable (Double, String) -> Void) async throws -> SpotifyPlaylistResult
-    /// Silent append; throws SpotifyError.needsReconnect/.playlistPublic/.playlistFull, commits each landed batch via onBatchAdded.
     func appendTracks(playlistID: String,
                       trackURIs: [String],
                       onBatchAdded: ([String]) -> Void) async throws -> Int
@@ -57,7 +56,7 @@ actor SpotifyService: SpotifyProviding {
     }
 
     func connect(clientID: String) async throws -> String {
-        // Changing the client ID invalidates its authenticated session and stored tokens.
+        // A client-ID change invalidates the authenticated session and stored tokens.
         if Keychain.get(account: Keychain.Account.clientID) != clientID {
             Keychain.clearTokens()
             Keychain.set(clientID, account: Keychain.Account.clientID)
@@ -96,7 +95,6 @@ actor SpotifyService: SpotifyProviding {
         return SpotifyPlaylistResult(id: playlist.id, url: playlist.external_urls.spotify, added: added)
     }
 
-    /// Headless append: no interactive authorize, commits each landed batch via onBatchAdded so a mid-run 5xx keeps earlier tracks.
     func appendTracks(playlistID: String,
                       trackURIs: [String],
                       onBatchAdded: ([String]) -> Void) async throws -> Int {
@@ -112,7 +110,7 @@ actor SpotifyService: SpotifyProviding {
         return added
     }
 
-    /// Reuses the cached auth or builds one from the keychain and assigns it back, so a single rotating refresh token is never spent twice.
+    /// Cache one auth instance so the rotating refresh token is spent once.
     private func sharedAuth() throws -> SpotifyAuth {
         if let auth { return auth }
         guard let clientID = clientIDSource(), !clientID.isEmpty else { throw SpotifyError.notAuthenticated }

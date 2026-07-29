@@ -74,7 +74,6 @@ struct HomeView: View {
         }
     }
 
-    // Headless failures and the pre-expiry nudge share one reconnect path.
     private var reconnectPrompt: String? {
         if headlessSyncError != nil {
             return "Reconnect Spotify"
@@ -124,7 +123,7 @@ private struct PlaylistRow: View {
                     .ui(14, 700, color: Palette.rowName)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                // "sent" is honest: the count is songs sent (monotonic), which can exceed the live total.
+                // "Sent" is monotonic and may exceed Spotify's live total.
                 Text("\(playlist.songCount) sent · from \(playlist.chatName)")
                     .ui(12, 400, color: Palette.muted)
                     .lineLimit(1)

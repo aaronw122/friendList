@@ -1,8 +1,6 @@
 import Foundation
 import UserNotifications
 
-// Appends timestamped lines to ~/Library/Logs/friendList/sync.log (base injectable for tests),
-// creating the directory on first use so a first-ever headless run never fails to log.
 struct HeadlessLog {
     let directory: URL
 
@@ -29,17 +27,11 @@ struct HeadlessLog {
     }
 }
 
-// One headless run's result: the per-playlist outcomes plus a non-nil message when the run
-// failed or needs a Spotify reconnect (which drives the notification + persisted error).
 struct HeadlessRunResult {
     let outcomes: [SyncOutcome]
     let failureMessage: String?
 }
 
-// The `--sync` executable's UI-free entry. It builds PlaylistSync from the keychain-backed
-// SpotifyService (no interactive auth, no window), runs one background sync, logs it, and
-// surfaces a failure via a local notification + a persisted error so a stuck sync is visible
-// even if the app isn't opened for weeks.
 enum HeadlessSync {
     static let syncFlag = "--sync"
     static let lastErrorKey = "friendlist.lastSyncError"
@@ -48,9 +40,7 @@ enum HeadlessSync {
         arguments.contains(syncFlag)
     }
 
-    // Drives the run then keeps the process alive on the main queue (so @MainActor work in
-    // SyncStatus can execute) until a background waiter observes completion and exits — the
-    // semaphore guarantees the process never exits mid-flight.
+    // A background semaphore wait frees the main queue for @MainActor work; dispatchMain() keeps the process alive.
     static func run() -> Never {
         let log = HeadlessLog()
         log.append("headless sync starting")
@@ -72,8 +62,6 @@ enum HeadlessSync {
         dispatchMain()
     }
 
-    // Testable core: runs the sync with injected dependencies, persists any failure, and
-    // reports whether the caller should notify. Never posts notifications itself.
     @MainActor
     static func buildAndSync(messages: MessagesReading,
                              spotify: SpotifyProviding,

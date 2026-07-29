@@ -1,9 +1,7 @@
 import Foundation
 import ServiceManagement
 
-// Registers the single scheduled LaunchAgent (bundled at Contents/Library/LaunchAgents) that
-// runs the `--sync` headless entry at 08:00/12:00/20:00. The signed app bundle inherits FDA +
-// keychain grants, so the agent process reads chat.db and refreshes tokens without prompts.
+// The bundled LaunchAgent inherits the signed app's FDA and keychain grants.
 enum BackgroundSyncAgent {
     static let label = "com.friendlist.app.sync"
     static let plistName = "\(label).plist"
@@ -12,7 +10,6 @@ enum BackgroundSyncAgent {
         SMAppService.agent(plistName: plistName)
     }
 
-    // Idempotent: registers only once onboarding is complete and the agent isn't already enabled.
     static func registerIfOnboarded(persistence: PersistenceProviding = AppPersistence()) {
         guard persistence.didOnboard else { return }
         let service = service()

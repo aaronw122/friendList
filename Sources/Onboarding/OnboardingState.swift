@@ -104,7 +104,6 @@ final class OnboardingState {
     var visibleChats: [ChatSample] {
         let q = chatSearch.trimmingCharacters(in: .whitespaces).lowercased()
         let base = q.isEmpty ? chats : chats.filter { $0.name.lowercased().contains(q) }
-        // Rank by song count, preserve source recency for ties, and keep pinned chats first.
         let ranked = base.enumerated().sorted { a, b in
             a.element.links != b.element.links
                 ? a.element.links > b.element.links
@@ -143,7 +142,7 @@ final class OnboardingState {
         }
     }
 
-    /// Poll after opening Settings because FDA may apply live or require relaunch via the resume marker.
+    /// FDA may apply live or require relaunch through the resume marker.
     func requestAccess() {
         Persistence.resumeAtPicker = true
         FullDiskAccess.openSettings()
@@ -171,7 +170,7 @@ final class OnboardingState {
         }
     }
 
-    // Runs off the main thread; the chat scan is heavy enough to stall the picker transition.
+    // Run the chat scan off-main to avoid stalling the picker transition.
     func reloadChats() {
         guard !chatsLoading else { return }
         chatsLoading = true
@@ -280,7 +279,7 @@ final class OnboardingState {
                 connected = false
                 connectError = "Your Spotify session expired. Please reconnect."
             } else {
-                // A temporary network or API failure must not discard an otherwise reusable session.
+                // Preserve a reusable session across transient network and API failures.
                 connectError = "Couldn't check Spotify right now: \(error.localizedDescription)"
             }
         }
@@ -305,12 +304,12 @@ final class OnboardingState {
         connectError = nil
         do {
             let name = try await spotify.connect(clientID: id)
-            // Stamp the 6-month refresh-token clock at consent (and each reconnect); it drives the pre-expiry nudge.
+            // Consent and reconnect reset the six-month refresh-token nudge clock.
             persistence.authorizationDate = Date()
             spotifyDisplayName = name
             connected = true
             connecting = false
-            // Browser auth may finish after navigation; advance only if the consent screen is still active.
+            // Browser auth may finish after navigation, so advance only from the consent screen.
             if step == fromStep { advance() }
         } catch {
             connecting = false
@@ -334,7 +333,7 @@ final class OnboardingState {
                 name: playlistName, description: description, trackURIs: uris
             ) { frac, label in
                 Task { @MainActor in
-                    // Progress callbacks can arrive out of order, so the displayed value must not regress.
+                    // Out-of-order progress callbacks must not regress the displayed value.
                     self.createPct = max(self.createPct, frac)
                     self.createLabel = label
                 }
@@ -352,14 +351,12 @@ final class OnboardingState {
         }
     }
 
-    // Re-read playlists from the scheduled sync's persisted store.
     @MainActor
     func reloadLists() {
         lists = Self.mapped(persistence.loadPlaylists() ?? [])
     }
 
-    /// Roughly two weeks before the 6-month refresh-token anniversary, nudge a reconnect while the
-    /// token still works; after the anniversary the hard needsReconnect(.expired) state takes over.
+    /// Nudge reconnection two weeks before six-month expiry while the token still works.
     func reconnectNudgeActive(now: Date = Date()) -> Bool {
         guard let authorized = persistence.authorizationDate else { return false }
         let cal = Calendar.current
@@ -368,7 +365,6 @@ final class OnboardingState {
         return now >= windowStart && now < anniversary
     }
 
-    /// Route the Home reconnect affordance back through the existing consent flow (which re-stamps the date).
     func beginReconnect() {
         connected = false
         go(to: 5)
@@ -415,7 +411,7 @@ final class OnboardingState {
             spotifyID: spotifyID,
             chatGUID: pickedChat?.guid ?? ""
         )
-        // Prefer Spotify ID identity; name and chat are only a fallback when no ID exists.
+        // Spotify ID is canonical; use name and chat only when it is absent.
         let matchIdx = lists.firstIndex(where: {
             if !spotifyID.isEmpty { return $0.spotifyID == spotifyID }
             return $0.name == pl.name && $0.chatGUID == pl.chatGUID

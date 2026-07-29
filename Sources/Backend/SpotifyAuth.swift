@@ -1,7 +1,6 @@
 import Foundation
 import AppKit
 
-/// Why a stored authorization can no longer produce tokens; drives the reconnect path.
 enum ReconnectReason: Sendable, Equatable {
     case expired
 }
@@ -51,7 +50,6 @@ extension Error {
     }
 }
 
-/// Serializes rotating-token refreshes and retains the stored token when Spotify omits a replacement.
 actor SpotifyAuth {
     private let clientID: String
     private let http: SpotifyHTTP
@@ -94,7 +92,7 @@ actor SpotifyAuth {
         let authorizeURL = comps.url!
 
         let server = LoopbackAuthServer(port: SpotifyConfig.loopbackPort)
-        // Listen before opening the browser so a fast redirect cannot be missed.
+        // Start the loopback listener before opening the browser to avoid missing a fast redirect.
         let redirectTask = Task { try await server.waitForRedirect() }
         defer { redirectTask.cancel() }
         await MainActor.run { _ = NSWorkspace.shared.open(authorizeURL) }
@@ -119,7 +117,7 @@ actor SpotifyAuth {
         return token
     }
 
-    /// Actor reentrancy can spend a rotating refresh token twice, so concurrent callers share one refresh task.
+    /// Concurrent callers share one refresh task so the rotating token is spent once.
     private func refreshCoalesced() async throws {
         if let inFlight = refreshInFlight {
             try await inFlight.value
@@ -166,14 +164,14 @@ actor SpotifyAuth {
         do {
             token = try await postToken(form)
         } catch let SpotifyError.http(code, body) where code == 400 || code == 401 {
-            // invalid_grant on refresh means the 6-month refresh-token lifetime lapsed — a hard reconnect, not a transient failure.
+            // invalid_grant means the six-month refresh-token lifetime expired and requires reconnecting.
             if code == 400, body.lowercased().contains("invalid_grant") {
                 throw SpotifyError.needsReconnect(reason: .expired)
             }
             throw SpotifyError.sessionExpired
         }
         apply(token)
-        // Spotify may omit refresh_token; replacing the stored token only when present prevents permanent auth loss.
+        // Spotify may omit refresh_token, so retain the stored token unless a replacement is returned.
         if let rt = token.refresh_token, !rt.isEmpty {
             saveRefreshToken(rt)
         }

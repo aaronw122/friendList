@@ -1,7 +1,6 @@
 import Foundation
 import Combine
 
-// One headless run's result: PlaylistSync writes it; HeadlessSync reads it to decide whether to notify.
 @MainActor
 final class SyncStatus: ObservableObject {
     @Published private(set) var lastSyncDate: Date?
@@ -13,7 +12,6 @@ final class SyncStatus: ObservableObject {
 
     func begin() { isSyncing = true }
 
-    // A run that actually executed: stamps last-synced, replaces outcomes, clears any prior error.
     func complete(outcomes: [SyncOutcome], needsReconnect: Bool, reconnectReason: ReconnectReason?) {
         isSyncing = false
         lastSyncDate = Date()
@@ -23,7 +21,6 @@ final class SyncStatus: ObservableObject {
         lastSyncError = nil
     }
 
-    // A run that never got to sync (corrupt store): surface the reason, leave last-synced alone.
     func fail(_ message: String) {
         isSyncing = false
         lastSyncError = message

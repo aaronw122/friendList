@@ -1,6 +1,5 @@
 import Foundation
 
-/// Seam over URLSession so tests can drive HTTP status/body without the network.
 protocol SpotifyHTTP: Sendable {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
 }
@@ -13,7 +12,7 @@ struct URLSessionHTTP: SpotifyHTTP {
     }
 }
 
-/// Uses post-Feb-2026 /items endpoints in ≤100-URI batches, falling back to legacy /tracks on 404.
+/// Spotify's /items endpoint accepts at most 100 URIs; a 404 requires the legacy /tracks fallback.
 struct SpotifyClient {
     let tokenProvider: () async throws -> String
     var http: SpotifyHTTP = URLSessionHTTP()
@@ -52,7 +51,7 @@ struct SpotifyClient {
         }
     }
 
-    /// We request only playlist-modify-private, so a public-playlist add and a full playlist both 403; the body tells them apart.
+    /// With only playlist-modify-private scope, the 403 body distinguishes public playlists from full playlists.
     static func classify403(_ body: String) -> SpotifyError {
         let lower = body.lowercased()
         if lower.contains("10000") || lower.contains("maximum") || lower.contains("exceed") || lower.contains("add more than") {
@@ -89,12 +88,12 @@ struct SpotifyClient {
         case 200..<300:
             return data
         case 429 where attempt < 3:
-            // A 429 means the request was not applied, so retrying any method is safe.
+            // A 429 is unapplied, so retrying any HTTP method is safe.
             let retry = Double(httpResponse.value(forHTTPHeaderField: "Retry-After") ?? "1") ?? 1
             try await Task.sleep(nanoseconds: UInt64((retry + 0.2) * 1_000_000_000))
             return try await send(method, path, body: body, attempt: attempt + 1)
         case 500..<600 where attempt < 3 && method == "GET":
-            // Retry only GET on 5xx; replaying a possibly applied POST could duplicate playlists or tracks.
+            // Retry only GET on 5xx because replaying a possibly applied POST can duplicate data.
             try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt)) * 1_000_000_000))
             return try await send(method, path, body: body, attempt: attempt + 1)
         default:

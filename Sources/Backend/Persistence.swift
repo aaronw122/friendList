@@ -35,7 +35,6 @@ struct AppPersistence: PersistenceProviding {
     func seen(forSpotifyID id: String) -> Set<String> { Persistence.seen(forSpotifyID: id) }
 }
 
-// The file store holds spotifyID-keyed dedup state and created playlists.
 struct StoreFile: Codable {
     var schemaVersion: Int
     var seen: [String: [String]]
@@ -50,7 +49,6 @@ enum Persistence {
     private static let decoder = JSONDecoder()
     private static let schemaVersion = 1
 
-    // Test seam: point the store at a temp dir.
     static var storeDirectoryOverride: URL?
 
     // MARK: FDA relaunch resume
@@ -82,13 +80,11 @@ enum Persistence {
         try? fm.createDirectory(at: storeDir, withIntermediateDirectories: true)
     }
 
-    // Serializes the synchronous read-fresh -> mutate -> write section.
     private static let storeMutex = NSRecursiveLock()
 
     // MARK: Playlists
     static func loadPlaylists() -> [SavedPlaylist]? { currentStore()?.playlists }
 
-    // The playlist writer keeps the spotifyID merge with a name and chat fallback.
     static func upsertPlaylists(_ updates: [SavedPlaylist]) {
         guard !updates.isEmpty else { return }
         mutateStore { store in
@@ -129,8 +125,7 @@ enum Persistence {
     }
 
     // MARK: Store read/write core
-    // Lock-guarded read-fresh → mutate → write. Returns nil on a corrupt store
-    // (mutation aborted, good bytes preserved) rather than wiping seen/playlists.
+    // A corrupt store aborts mutation so existing bytes and dedup state are never wiped.
     @discardableResult
     static func mutateStore<T>(_ body: (inout StoreFile) -> T) -> T? {
         storeMutex.lock()
@@ -169,7 +164,6 @@ enum Persistence {
         return .decoded(store)
     }
 
-    // Materializes an empty store on first access; nil means corrupt.
     private static func loadOrCreateLocked() -> StoreFile? {
         switch readStoreRaw() {
         case .decoded(let store):

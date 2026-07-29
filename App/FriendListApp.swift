@@ -1,7 +1,5 @@
 import SwiftUI
 
-// Branches before any window is built: the `--sync` LaunchAgent process runs the headless sync
-// and exits, everything else launches the normal SwiftUI app.
 @main
 struct FriendListMain {
     static func main() {

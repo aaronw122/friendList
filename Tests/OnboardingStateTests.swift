@@ -93,6 +93,28 @@ final class OnboardingStateTests: XCTestCase {
         XCTAssertEqual(persistence.seenURIs["playlist-id"], Set(state.scannedTrackURIs))
     }
 
+    func testCancelConnectClearsConnectingWithoutError() async throws {
+        let spotify = SpotifyFake()
+        spotify.connectDelay = 60_000_000_000
+        let state = makeState(spotify: spotify)
+        state.step = 5
+        state.clientId = "cid"
+
+        let run = Task { await state.connectSpotify() }
+        for _ in 0..<200 where !state.connecting {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(state.connecting)
+
+        state.cancelConnect()
+        await run.value
+
+        XCTAssertFalse(state.connecting)
+        XCTAssertNil(state.connectError)
+        XCTAssertFalse(state.connected)
+        XCTAssertEqual(state.step, 5)
+    }
+
     private func makeState(spotify: SpotifyFake,
                            persistence: PersistenceProviding = PersistenceFake()) -> OnboardingState {
         let state = OnboardingState(messages: MessagesFake(), spotify: spotify, persistence: persistence)

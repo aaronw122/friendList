@@ -11,9 +11,11 @@ struct SavedPlaylist: Codable, Hashable {
 
 protocol PersistenceProviding {
     var didOnboard: Bool { get set }
+    var authorizationDate: Date? { get set }
     func loadPlaylists() -> [SavedPlaylist]?
     func upsertPlaylists(_ updates: [SavedPlaylist])
-    func recordSeen(chatGUID: String, uris: [String])
+    func recordSeen(spotifyID: String, uris: [String])
+    func seen(forSpotifyID id: String) -> Set<String>
 }
 
 struct AppPersistence: PersistenceProviding {
@@ -22,13 +24,32 @@ struct AppPersistence: PersistenceProviding {
         nonmutating set { Persistence.didOnboard = newValue }
     }
 
+    var authorizationDate: Date? {
+        get { Persistence.authorizationDate }
+        nonmutating set { Persistence.authorizationDate = newValue }
+    }
+
     func loadPlaylists() -> [SavedPlaylist]? { Persistence.loadPlaylists() }
     func upsertPlaylists(_ updates: [SavedPlaylist]) { Persistence.upsertPlaylists(updates) }
-    func recordSeen(chatGUID: String, uris: [String]) { Persistence.recordSeen(chatGUID: chatGUID, uris: uris) }
+    func recordSeen(spotifyID: String, uris: [String]) { Persistence.recordSeen(spotifyID: spotifyID, uris: uris) }
+    func seen(forSpotifyID id: String) -> Set<String> { Persistence.seen(forSpotifyID: id) }
+}
+
+struct StoreFile: Codable {
+    var schemaVersion: Int
+    var seen: [String: [String]]
+    var playlists: [SavedPlaylist]
+    var authorizationDate: Date?
 }
 
 enum Persistence {
     private static let defaults = UserDefaults.standard
+    private static let fm = FileManager.default
+    private static let encoder = JSONEncoder()
+    private static let decoder = JSONDecoder()
+    private static let schemaVersion = 1
+
+    static var storeDirectoryOverride: URL?
 
     // MARK: FDA relaunch resume
     private static let kResumeAtPicker = "friendlist.resumeAtPicker"
@@ -44,65 +65,37 @@ enum Persistence {
         set { defaults.set(newValue, forKey: kDidOnboard) }
     }
 
-    // MARK: Created playlists (Home)
-    private static let kPlaylists = "friendlist.playlists"
-    private static let kPlaylistsBackup = "friendlist.playlists.bak"
-    private static let kPlaylistsCorrupt = "friendlist.playlists.corrupt"
-
-    static func loadPlaylists() -> [SavedPlaylist]? {
-        switch playlistStore() {
-        case .absent:
-            return []
-        case .loaded(let list):
-            return list
-        case .undecodable(let raw):
-            defaults.set(raw, forKey: kPlaylistsCorrupt)
-            return nil
-        }
+    // MARK: File store locations
+    private static var storeDir: URL {
+        if let override = storeDirectoryOverride { return override }
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("com.friendlist.app", isDirectory: true)
     }
+    private static var storeURL: URL { storeDir.appendingPathComponent("store.json") }
+    private static var backupURL: URL { storeDir.appendingPathComponent("store.json.bak") }
+    private static var corruptURL: URL { storeDir.appendingPathComponent("store.json.corrupt") }
+
+    private static func ensureDir() {
+        try? fm.createDirectory(at: storeDir, withIntermediateDirectories: true)
+    }
+
+    private static let storeMutex = NSRecursiveLock()
+
+    // MARK: Playlists
+    static func loadPlaylists() -> [SavedPlaylist]? { currentStore()?.playlists }
 
     static func upsertPlaylists(_ updates: [SavedPlaylist]) {
         guard !updates.isEmpty else { return }
-
-        let stored = playlistStore()
-        var list: [SavedPlaylist]
-        switch stored {
-        case .absent:
-            list = []
-        case .loaded(let current):
-            list = current
-        case .undecodable(let raw):
-            defaults.set(raw, forKey: kPlaylistsCorrupt)
-            list = []
-        }
-
-        for update in updates {
-            if let index = list.firstIndex(where: { playlistsMatch($0, update) }) {
-                list[index] = update
-            } else {
-                list.append(update)
+        mutateStore { store in
+            for update in updates {
+                if let index = store.playlists.firstIndex(where: { playlistsMatch($0, update) }) {
+                    store.playlists[index] = update
+                } else {
+                    store.playlists.append(update)
+                }
             }
         }
-
-        guard let data = try? JSONEncoder().encode(list) else { return }
-        if let prior = defaults.object(forKey: kPlaylists) {
-            defaults.set(prior, forKey: kPlaylistsBackup)
-        }
-        defaults.set(data, forKey: kPlaylists)
-    }
-
-    private enum PlaylistStore {
-        case absent
-        case loaded([SavedPlaylist])
-        case undecodable(Any)
-    }
-
-    private static func playlistStore() -> PlaylistStore {
-        guard let raw = defaults.object(forKey: kPlaylists) else { return .absent }
-        guard let data = raw as? Data,
-              let list = try? JSONDecoder().decode([SavedPlaylist].self, from: data)
-        else { return .undecodable(raw) }
-        return .loaded(list)
     }
 
     private static func playlistsMatch(_ lhs: SavedPlaylist, _ rhs: SavedPlaylist) -> Bool {
@@ -110,23 +103,92 @@ enum Persistence {
         return lhs.name == rhs.name && lhs.chatGUID == rhs.chatGUID
     }
 
-    // MARK: Per-chat dedup seen-set (M2 in-app dedup)
-    private static let kSeen = "friendlist.seen"
-    static func seenTracks(chatGUID: String) -> Set<String> {
-        let all = seenMap()
-        return Set(all[chatGUID] ?? [])
+    // MARK: Dedup seen-set (keyed by spotifyID so two playlists from one chat track apart)
+    static func seen(forSpotifyID id: String) -> Set<String> {
+        guard let store = currentStore() else { return [] }
+        return Set(store.seen[id] ?? [])
     }
-    static func recordSeen(chatGUID: String, uris: [String]) {
-        var all = seenMap()
-        var set = Set(all[chatGUID] ?? [])
-        set.formUnion(uris)
-        all[chatGUID] = Array(set)
-        if let data = try? JSONEncoder().encode(all) { defaults.set(data, forKey: kSeen) }
+
+    static func recordSeen(spotifyID: String, uris: [String]) {
+        guard !spotifyID.isEmpty else { return }
+        mutateStore { store in
+            var set = Set(store.seen[spotifyID] ?? [])
+            set.formUnion(uris)
+            store.seen[spotifyID] = Array(set)
+        }
     }
-    private static func seenMap() -> [String: [String]] {
-        guard let data = defaults.data(forKey: kSeen),
-              let map = try? JSONDecoder().decode([String: [String]].self, from: data)
-        else { return [:] }
-        return map
+
+    // MARK: Spotify authorization date (drives the 6-month token-expiry nudge)
+    static var authorizationDate: Date? {
+        get { currentStore()?.authorizationDate }
+        set { mutateStore { $0.authorizationDate = newValue } }
+    }
+
+    // MARK: Store read/write core
+    // A corrupt store aborts mutation so existing bytes and dedup state are never wiped.
+    @discardableResult
+    static func mutateStore<T>(_ body: (inout StoreFile) -> T) -> T? {
+        storeMutex.lock()
+        defer { storeMutex.unlock() }
+        guard var store = loadOrCreateLocked() else { return nil }
+        let result = body(&store)
+        writeStore(store)
+        return result
+    }
+
+    private static func currentStore() -> StoreFile? {
+        switch readStoreRaw() {
+        case .decoded(let store):
+            return store
+        case .corrupt(let raw):
+            stashCorrupt(raw)
+            return nil
+        case .fresh:
+            storeMutex.lock()
+            defer { storeMutex.unlock() }
+            return loadOrCreateLocked()
+        }
+    }
+
+    private enum StoreRead {
+        case fresh
+        case decoded(StoreFile)
+        case corrupt(Data)
+    }
+
+    private static func readStoreRaw() -> StoreRead {
+        ensureDir()
+        guard fm.fileExists(atPath: storeURL.path) else { return .fresh }
+        guard let data = try? Data(contentsOf: storeURL) else { return .corrupt(Data()) }
+        guard let store = try? decoder.decode(StoreFile.self, from: data) else { return .corrupt(data) }
+        return .decoded(store)
+    }
+
+    private static func loadOrCreateLocked() -> StoreFile? {
+        switch readStoreRaw() {
+        case .decoded(let store):
+            return store
+        case .corrupt(let raw):
+            stashCorrupt(raw)
+            return nil
+        case .fresh:
+            let built = StoreFile(schemaVersion: schemaVersion, seen: [:], playlists: [], authorizationDate: nil)
+            writeStore(built)
+            return built
+        }
+    }
+
+    private static func writeStore(_ store: StoreFile) {
+        ensureDir()
+        if fm.fileExists(atPath: storeURL.path), let current = try? Data(contentsOf: storeURL) {
+            try? current.write(to: backupURL, options: .atomic)
+        }
+        guard let data = try? encoder.encode(store) else { return }
+        try? data.write(to: storeURL, options: .atomic)
+    }
+
+    private static func stashCorrupt(_ raw: Data) {
+        ensureDir()
+        try? raw.write(to: corruptURL, options: .atomic)
     }
 }

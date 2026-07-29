@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeView: View {
     @Environment(OnboardingState.self) private var state
     @Environment(\.physicsBridge) private var physics
+    @State private var headlessSyncError: String?
 
     var body: some View {
         GeometryReader { geo in
@@ -11,12 +12,21 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 34)
         }
-        .onAppear { physics.dropAll() }
+        .task {
+            physics.dropAll()
+            state.reloadLists()
+            headlessSyncError = UserDefaults.standard.string(forKey: HeadlessSync.lastErrorKey)
+        }
     }
 
     private var panel: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+
+            if let reconnect = reconnectPrompt {
+                ReconnectPrompt(message: reconnect) { state.beginReconnect() }
+                    .padding(.top, 12)
+            }
 
             if state.lists.isEmpty {
                 Text("No playlists yet.")
@@ -34,7 +44,7 @@ struct HomeView: View {
             PrimaryButton(title: "Create a new one", fullWidth: true, metrics: .home) {
                 state.createAnother()
             }
-            .padding(.top, 14)
+            .padding(.top, 12)
         }
         .padding(.top, 20)
         .padding(.horizontal, 22)
@@ -57,11 +67,44 @@ struct HomeView: View {
                 .ui(22, 800, color: Palette.ink)
                 .tracking(-0.03 * 22)
             Spacer()
-            Text("SYNCING")
+            Text("AUTO-SYNC")
                 .mono(11, 400, color: Palette.faint)
                 .tracking(0.06 * 11)
                 .textCase(.uppercase)
         }
+    }
+
+    private var reconnectPrompt: String? {
+        if headlessSyncError != nil {
+            return "Reconnect Spotify"
+        }
+        if state.reconnectNudgeActive() {
+            return "Reconnect Spotify to keep syncing."
+        }
+        return nil
+    }
+}
+
+private struct ReconnectPrompt: View {
+    let message: String
+    let action: () -> Void
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(message)
+                .ui(12.5, 600, color: Palette.ink)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+            LinkButton(title: "Reconnect", size: 12.5, color: Palette.spotify, action: action)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: Radii.row, style: .continuous).fill(Palette.tint)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radii.row, style: .continuous)
+                .strokeBorder(Palette.focus.opacity(0.4), lineWidth: 1)
+        )
     }
 }
 
@@ -80,7 +123,8 @@ private struct PlaylistRow: View {
                     .ui(14, 700, color: Palette.rowName)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text("\(playlist.songCount) songs · from \(playlist.chatName)")
+                // "Sent" is monotonic and may exceed Spotify's live total.
+                Text("\(playlist.songCount) sent · from \(playlist.chatName)")
                     .ui(12, 400, color: Palette.muted)
                     .lineLimit(1)
                     .truncationMode(.tail)

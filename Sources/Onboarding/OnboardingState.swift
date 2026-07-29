@@ -23,6 +23,7 @@ struct Playlist: Identifiable, Hashable {
 
 // MARK: - Onboarding state machine
 
+@MainActor
 @Observable
 final class OnboardingState {
     var step: Int = 1
@@ -88,10 +89,7 @@ final class OnboardingState {
             self.spotify = isPreview ? FakeSpotify() : SpotifyService()
         }
         self.persistence = persistence
-        self.lists = (persistence.loadPlaylists() ?? []).map {
-            Playlist(name: $0.name, songCount: $0.songCount, chatName: $0.chatName,
-                     externalURL: $0.externalURL, spotifyID: $0.spotifyID, chatGUID: $0.chatGUID)
-        }
+        self.lists = Self.mapped(persistence.loadPlaylists() ?? [])
         if !isPreview && persistence.didOnboard && !lists.isEmpty {
             step = 0
             sheetIn = false
@@ -106,7 +104,6 @@ final class OnboardingState {
     var visibleChats: [ChatSample] {
         let q = chatSearch.trimmingCharacters(in: .whitespaces).lowercased()
         let base = q.isEmpty ? chats : chats.filter { $0.name.lowercased().contains(q) }
-        // Rank by song count, preserve source recency for ties, and keep pinned chats first.
         let ranked = base.enumerated().sorted { a, b in
             a.element.links != b.element.links
                 ? a.element.links > b.element.links
@@ -145,7 +142,7 @@ final class OnboardingState {
         }
     }
 
-    /// Poll after opening Settings because FDA may apply live or require relaunch via the resume marker.
+    /// FDA may apply live or require relaunch through the resume marker.
     func requestAccess() {
         Persistence.resumeAtPicker = true
         FullDiskAccess.openSettings()
@@ -173,7 +170,7 @@ final class OnboardingState {
         }
     }
 
-    // Runs off the main thread; the chat scan is heavy enough to stall the picker transition.
+    // Run the chat scan off-main to avoid stalling the picker transition.
     func reloadChats() {
         guard !chatsLoading else { return }
         chatsLoading = true
@@ -282,7 +279,7 @@ final class OnboardingState {
                 connected = false
                 connectError = "Your Spotify session expired. Please reconnect."
             } else {
-                // A temporary network or API failure must not discard an otherwise reusable session.
+                // Preserve a reusable session across transient network and API failures.
                 connectError = "Couldn't check Spotify right now: \(error.localizedDescription)"
             }
         }
@@ -307,10 +304,12 @@ final class OnboardingState {
         connectError = nil
         do {
             let name = try await spotify.connect(clientID: id)
+            // Consent and reconnect reset the six-month refresh-token nudge clock.
+            persistence.authorizationDate = Date()
             spotifyDisplayName = name
             connected = true
             connecting = false
-            // Browser auth may finish after navigation; advance only if the consent screen is still active.
+            // Browser auth may finish after navigation, so advance only from the consent screen.
             if step == fromStep { advance() }
         } catch {
             connecting = false
@@ -334,7 +333,7 @@ final class OnboardingState {
                 name: playlistName, description: description, trackURIs: uris
             ) { frac, label in
                 Task { @MainActor in
-                    // Progress callbacks can arrive out of order, so the displayed value must not regress.
+                    // Out-of-order progress callbacks must not regress the displayed value.
                     self.createPct = max(self.createPct, frac)
                     self.createLabel = label
                 }
@@ -349,6 +348,32 @@ final class OnboardingState {
             } else {
                 createLabel = "Couldn't finish: \(error.localizedDescription)"
             }
+        }
+    }
+
+    @MainActor
+    func reloadLists() {
+        lists = Self.mapped(persistence.loadPlaylists() ?? [])
+    }
+
+    /// Nudge reconnection two weeks before six-month expiry while the token still works.
+    func reconnectNudgeActive(now: Date = Date()) -> Bool {
+        guard let authorized = persistence.authorizationDate else { return false }
+        let cal = Calendar.current
+        guard let anniversary = cal.date(byAdding: .month, value: 6, to: authorized),
+              let windowStart = cal.date(byAdding: .day, value: -14, to: anniversary) else { return false }
+        return now >= windowStart && now < anniversary
+    }
+
+    func beginReconnect() {
+        connected = false
+        go(to: 5)
+    }
+
+    private static func mapped(_ saved: [SavedPlaylist]) -> [Playlist] {
+        saved.map {
+            Playlist(name: $0.name, songCount: $0.songCount, chatName: $0.chatName,
+                     externalURL: $0.externalURL, spotifyID: $0.spotifyID, chatGUID: $0.chatGUID)
         }
     }
 
@@ -386,7 +411,7 @@ final class OnboardingState {
             spotifyID: spotifyID,
             chatGUID: pickedChat?.guid ?? ""
         )
-        // Prefer Spotify ID identity; name and chat are only a fallback when no ID exists.
+        // Spotify ID is canonical; use name and chat only when it is absent.
         let matchIdx = lists.firstIndex(where: {
             if !spotifyID.isEmpty { return $0.spotifyID == spotifyID }
             return $0.name == pl.name && $0.chatGUID == pl.chatGUID
@@ -398,8 +423,8 @@ final class OnboardingState {
         }
         lastCreatedURL = externalURL
         persistPlaylist(pl)
-        if let guid = pickedChat?.guid {
-            persistence.recordSeen(chatGUID: guid, uris: scannedTrackURIs)
+        if !spotifyID.isEmpty {
+            persistence.recordSeen(spotifyID: spotifyID, uris: scannedTrackURIs)
         }
         persistence.didOnboard = true
         go(to: 9)

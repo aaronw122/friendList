@@ -1,6 +1,15 @@
 import SwiftUI
 
 @main
+struct FriendListMain {
+    static func main() {
+        if HeadlessSync.isRequested(in: CommandLine.arguments) {
+            HeadlessSync.run()
+        }
+        FriendListApp.main()
+    }
+}
+
 struct FriendListApp: App {
     var body: some Scene {
         WindowGroup {
@@ -19,6 +28,7 @@ struct FriendListApp: App {
             OnboardingContainer()
                 .frame(width: Geometry.contentWidth, height: Geometry.contentHeight)
                 .background(Palette.deskGradient)
+                .task { BackgroundSyncAgent.registerIfOnboarded() }
         }
     }
 }

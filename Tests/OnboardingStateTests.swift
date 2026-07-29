@@ -84,13 +84,13 @@ final class OnboardingStateTests: XCTestCase {
 
         await state.createPlaylist()
 
-        let request = await spotify.lastCreateRequest
+        let request = spotify.lastCreateRequest
         XCTAssertEqual(request?.uris, state.scannedTrackURIs)
         XCTAssertEqual(state.lists.last?.name, "Road trip")
         XCTAssertEqual(state.lists.last?.spotifyID, "playlist-id")
         XCTAssertEqual(state.step, 9)
         XCTAssertEqual(persistence.savedPlaylists.last?.spotifyID, "playlist-id")
-        XCTAssertEqual(persistence.seenURIs["chat-guid"], Set(state.scannedTrackURIs))
+        XCTAssertEqual(persistence.seenURIs["playlist-id"], Set(state.scannedTrackURIs))
     }
 
     private func makeState(spotify: SpotifyFake,
@@ -103,6 +103,7 @@ final class OnboardingStateTests: XCTestCase {
 
 private final class PersistenceFake: PersistenceProviding {
     var didOnboard = false
+    var authorizationDate: Date?
     var savedPlaylists: [SavedPlaylist] = []
     var seenURIs: [String: Set<String>] = [:]
 
@@ -119,56 +120,7 @@ private final class PersistenceFake: PersistenceProviding {
             }
         }
     }
-    func recordSeen(chatGUID: String, uris: [String]) { seenURIs[chatGUID, default: []].formUnion(uris) }
+    func recordSeen(spotifyID: String, uris: [String]) { seenURIs[spotifyID, default: []].formUnion(uris) }
+    func seen(forSpotifyID id: String) -> Set<String> { seenURIs[id] ?? [] }
 }
-
-private struct MessagesFake: MessagesReading {
-    func canRead() -> Bool { true }
-    func groupChats() throws -> [GroupChat] { [] }
-    func scan(chatGUID: String, progress: @escaping (ScanProgress) -> Void) throws -> ChatScan {
-        ChatScan(trackURIs: [], youtubeCount: 0, messagesScanned: 0)
-    }
-}
-
-private actor SpotifyFake: SpotifyProviding {
-    struct CreateRequest: Equatable {
-        let name: String
-        let description: String
-        let uris: [String]
-    }
-
-    let savedID: String?
-    let restored: SpotifySession?
-    let restoreError: Error?
-    let createError: Error?
-    private(set) var lastCreateRequest: CreateRequest?
-
-    init(savedID: String? = nil,
-         restored: SpotifySession? = nil,
-         restoreError: Error? = nil,
-         createError: Error? = nil) {
-        self.savedID = savedID
-        self.restored = restored
-        self.restoreError = restoreError
-        self.createError = createError
-    }
-
-    func savedClientID() -> String? { savedID }
-
-    func restoreSession() throws -> SpotifySession? {
-        if let restoreError { throw restoreError }
-        return restored
-    }
-
-    func connect(clientID: String) async throws -> String { "Connected User" }
-
-    func createPlaylist(name: String,
-                        description: String,
-                        trackURIs: [String],
-                        progress: @escaping @Sendable (Double, String) -> Void) async throws -> SpotifyPlaylistResult {
-        lastCreateRequest = CreateRequest(name: name, description: description, uris: trackURIs)
-        if let createError { throw createError }
-        progress(1, "Done")
-        return SpotifyPlaylistResult(id: "playlist-id", url: "https://open.spotify.com/playlist/id", added: trackURIs.count)
-    }
-}
+// MessagesFake / SpotifyFake are shared — see TestSupport.swift.

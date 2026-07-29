@@ -7,6 +7,12 @@
 #
 # Uses a DEDICATED keychain with a known password ("friendlist") so it never
 # needs your login-keychain password and never prompts. Idempotent.
+#
+# SECURITY TRADEOFF (accepted for a personal dev machine): constant password,
+# no auto-lock, and codesign pre-authorized via -T/partition list mean ANY
+# same-user local process can sign binaries as com.friendlist.app and inherit
+# the app's Full Disk Access TCC grant.
+# NEVER reuse this identity for distribution builds.
 set -euo pipefail
 
 IDENTITY="FriendList Dev"

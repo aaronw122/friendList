@@ -24,6 +24,6 @@ struct SampleMessagesReader: MessagesReading {
         let n = Self.samples.indices.contains(idx) ? Self.samples[idx].1 : 12
         let uris = (0..<n).map { "spotify:track:\(String(format: "%022d", $0))" }
         progress(ScanProgress(fraction: 1, messagesScanned: n * 40, found: uris.count, label: "Found \(uris.count) songs"))
-        return ChatScan(trackURIs: uris, youtubeCount: 0, messagesScanned: n * 40)
+        return ChatScan(trackURIs: uris, youtubeCount: 0, spotifyShortLinkCount: 0, messagesScanned: n * 40)
     }
 }

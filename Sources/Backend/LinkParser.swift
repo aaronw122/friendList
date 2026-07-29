@@ -3,6 +3,7 @@ import Foundation
 /// Lossy UTF-8 byte scanning preserves embedded ASCII URLs that streamtyped attributedBody archives cannot decode.
 protocol LinkParsing: Sendable {
     func spotifyTrackURIs(in text: String) -> [String]
+    func spotifyShortLinkCount(in text: String) -> Int
     func youTubeCount(in text: String) -> Int
     func decode(blob: Data) -> String
 }
@@ -14,6 +15,10 @@ struct LinkParser: LinkParsing {
         options: [.caseInsensitive])
     private static let spotifyURI = try! NSRegularExpression(
         pattern: #"spotify:track:([A-Za-z0-9]{22})"#,
+        options: [.caseInsensitive])
+    // spotify.link short links hide the track behind a redirect; counted for disclosure, never resolved.
+    private static let spotifyShortLink = try! NSRegularExpression(
+        pattern: #"spotify\.link/[A-Za-z0-9]+"#,
         options: [.caseInsensitive])
     private static let youtube = try! NSRegularExpression(
         pattern: #"(?:youtube\.com/watch\?[^\s]*\bv=|youtu\.be/)([A-Za-z0-9_-]{11})"#,
@@ -31,6 +36,12 @@ struct LinkParser: LinkParsing {
             }
         }
         return ids.map { "spotify:track:\($0)" }
+    }
+
+    func spotifyShortLinkCount(in text: String) -> Int {
+        guard !text.isEmpty else { return 0 }
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        return Self.spotifyShortLink.numberOfMatches(in: text, range: range)
     }
 
     func youTubeCount(in text: String) -> Int {

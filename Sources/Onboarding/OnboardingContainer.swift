@@ -19,7 +19,7 @@ struct OnboardingContainer: View {
         ZStack {
             Palette.deskGradient.ignoresSafeArea()
 
-            PhysicsStageView(bridge: physics)
+            PhysicsStageView(bridge: physics, isPaused: state.step >= 2)
                 .opacity(state.step >= 2 ? 0 : 1)
                 .allowsHitTesting(state.step < 2)
                 .animation(.easeInOut(duration: 0.35), value: state.step >= 2)

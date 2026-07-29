@@ -115,9 +115,139 @@ final class OnboardingStateTests: XCTestCase {
         XCTAssertEqual(state.step, 5)
     }
 
+    func testStaleScanResultIsDiscarded() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        var messages = MessagesFake(uris: ["spotify:track:stale"])
+        messages.scanGate = gate
+        let state = makeState(spotify: SpotifyFake(), messages: messages)
+        state.chats = [
+            ChatSample(name: "A", links: 1, guid: "chat-a"),
+            ChatSample(name: "B", links: 1, guid: "chat-b"),
+        ]
+        state.pickedID = "chat-a"
+        state.step = 4
+
+        let run = Task { await state.performScan() }
+        for _ in 0..<300 where messages.scanCount == 0 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(messages.scanCount, 1)
+
+        state.pickedID = "chat-b"
+        gate.signal()
+        await run.value
+
+        XCTAssertTrue(state.scannedTrackURIs.isEmpty)
+        XCTAssertEqual(state.found, 0)
+        XCTAssertNil(state.scanError)
+    }
+
+    func testScanFailureSurfacesAnErrorInsteadOfEmptyResults() async {
+        var messages = MessagesFake()
+        messages.scanError = NSError(domain: "test", code: 1,
+                                     userInfo: [NSLocalizedDescriptionKey: "database unreadable"])
+        let state = makeState(spotify: SpotifyFake(), messages: messages)
+        state.chats = [ChatSample(name: "Friends", links: 2, guid: "chat-guid")]
+        state.pickedID = "chat-guid"
+
+        await state.performScan()
+
+        XCTAssertEqual(state.scanError, "database unreadable")
+        XCTAssertTrue(state.scannedTrackURIs.isEmpty)
+        XCTAssertEqual(state.scanPct, 1)
+    }
+
+    func testRetryAfterPartialCreateAppendsInsteadOfDuplicating() async {
+        let spotify = SpotifyFake()
+        spotify.partialCreation = (id: "playlist-id", url: "https://open.spotify.com/playlist/id", added: 1)
+        let persistence = PersistenceFake()
+        let state = makeState(spotify: spotify, persistence: persistence)
+        state.connected = true
+        state.step = 8
+        state.chats = [ChatSample(name: "Friends", links: 3, guid: "chat-guid")]
+        state.pickedID = "chat-guid"
+        state.name = "Road trip"
+        state.found = 3
+        state.scannedTrackURIs = ["spotify:track:one", "spotify:track:two", "spotify:track:three"]
+
+        await state.createPlaylist()
+
+        XCTAssertNotNil(state.createError)
+        XCTAssertEqual(state.step, 8)
+        XCTAssertTrue(state.lists.isEmpty)
+
+        spotify.partialCreation = nil
+        await state.createPlaylist()
+
+        XCTAssertEqual(spotify.createCallCount, 1)
+        XCTAssertEqual(spotify.appended, [["spotify:track:two", "spotify:track:three"]])
+        XCTAssertEqual(state.step, 9)
+        XCTAssertNil(state.createError)
+        XCTAssertEqual(state.lists.last?.spotifyID, "playlist-id")
+        XCTAssertEqual(persistence.seenURIs["playlist-id"], Set(state.scannedTrackURIs))
+    }
+
+    func testRestoreRetriesAfterTransientFailure() async {
+        let spotify = SpotifyFake(savedID: "cid", restoreError: SpotifyError.http(500, "server error"))
+        let state = makeState(spotify: spotify)
+
+        await state.restoreSpotifySession()
+        XCTAssertFalse(state.connected)
+
+        spotify.restoreError = nil
+        spotify.restored = SpotifySession(clientID: "cid", displayName: "Taylor")
+        await state.restoreSpotifySession()
+
+        XCTAssertTrue(state.connected)
+        XCTAssertEqual(state.spotifyDisplayName, "Taylor")
+    }
+
+    func testLateCreateCompletionKeepsCapturedNameAndStep() async throws {
+        let spotify = SpotifyFake()
+        spotify.createDelay = 300_000_000
+        let state = makeState(spotify: spotify)
+        state.connected = true
+        state.step = 8
+        state.chats = [ChatSample(name: "Friends", links: 1, guid: "chat-guid")]
+        state.pickedID = "chat-guid"
+        state.name = "Original"
+        state.scannedTrackURIs = ["spotify:track:one"]
+
+        let run = Task { await state.createPlaylist() }
+        for _ in 0..<300 where spotify.lastCreateRequest == nil {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        state.go(to: 7)
+        state.name = "Changed"
+        await run.value
+
+        XCTAssertEqual(state.step, 7)
+        XCTAssertEqual(spotify.lastCreateRequest?.name, "Original")
+        XCTAssertEqual(state.lists.last?.name, "Original")
+    }
+
+    func testReloadChatsSkipsWhenAlreadyLoadedAndKeepsSelection() async throws {
+        var messages = MessagesFake()
+        messages.chats = [GroupChat(guid: "chat-guid", name: "Friends", messageCount: 10, lastDate: 0, linkCount: 2)]
+        let state = makeState(spotify: SpotifyFake(), messages: messages)
+
+        state.reloadChats()
+        for _ in 0..<300 where state.chats.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(state.chats.first?.id, "chat-guid")
+
+        state.pickedID = "chat-guid"
+        state.reloadChats()
+
+        XCTAssertEqual(messages.groupChatsCount, 1)
+        XCTAssertEqual(state.pickedChat?.guid, "chat-guid")
+    }
+
     private func makeState(spotify: SpotifyFake,
-                           persistence: PersistenceProviding = PersistenceFake()) -> OnboardingState {
-        let state = OnboardingState(messages: MessagesFake(), spotify: spotify, persistence: persistence)
+                           persistence: PersistenceProviding = PersistenceFake(),
+                           messages: MessagesFake = MessagesFake()) -> OnboardingState {
+        let state = OnboardingState(messages: messages, spotify: spotify, persistence: persistence)
         state.lists = []
         return state
     }

@@ -32,26 +32,39 @@ final class MessagesReadLog: @unchecked Sendable {
     private let lock = NSLock()
     private var canReadHits = 0
     private var scanHits = 0
+    private var groupChatsHits = 0
     func markCanRead() { lock.lock(); canReadHits += 1; lock.unlock() }
     func markScan() { lock.lock(); scanHits += 1; lock.unlock() }
+    func markGroupChats() { lock.lock(); groupChatsHits += 1; lock.unlock() }
     var canReadCount: Int { lock.lock(); defer { lock.unlock() }; return canReadHits }
     var scanCount: Int { lock.lock(); defer { lock.unlock() }; return scanHits }
+    var groupChatsCount: Int { lock.lock(); defer { lock.unlock() }; return groupChatsHits }
 }
 
 struct MessagesFake: MessagesReading {
     var uris: [String] = []
     var readable = true
     private let log = MessagesReadLog()
+    /// Chats returned by `groupChats()`.
+    var chats: [GroupChat] = []
+    /// When set, `scan` blocks on this until the test signals — makes stale-scan races deterministic.
+    var scanGate: DispatchSemaphore?
+    /// When set, `scan` throws this instead of returning results.
+    var scanError: Error?
 
     /// True once `canRead()` has run — lets a test assert the chat was (not) touched.
     var canReadCalled: Bool { log.canReadCount > 0 }
     /// How many times a run actually scanned — proves whether a second run fired.
     var scanCount: Int { log.scanCount }
+    /// How many times the chat list was loaded — proves whether a redundant reload fired.
+    var groupChatsCount: Int { log.groupChatsCount }
 
     func canRead() -> Bool { log.markCanRead(); return readable }
-    func groupChats() throws -> [GroupChat] { [] }
+    func groupChats() throws -> [GroupChat] { log.markGroupChats(); return chats }
     func scan(chatGUID: String, progress: @escaping (ScanProgress) -> Void) throws -> ChatScan {
         log.markScan()
+        scanGate?.wait()
+        if let scanError { throw scanError }
         return ChatScan(trackURIs: uris, youtubeCount: 0, messagesScanned: uris.count)
     }
 }
@@ -73,6 +86,10 @@ final class SpotifyFake: SpotifyProviding, @unchecked Sendable {
     var createError: Error?
     /// Nanoseconds `connect` sleeps before returning — a cancellable stand-in for the browser wait.
     var connectDelay: UInt64?
+    /// Nanoseconds `createPlaylist` sleeps after recording the request — lets a test act mid-create.
+    var createDelay: UInt64?
+    /// When set, `createPlaylist` throws a partial-creation failure carrying this playlist.
+    var partialCreation: (id: String, url: String, added: Int)?
     /// Throw `failure` once this many batches have landed (0 = before the first batch). nil never throws.
     var failAfterBatches: Int?
     var failure: Error = SpotifyError.http(500, "server error")
@@ -80,9 +97,11 @@ final class SpotifyFake: SpotifyProviding, @unchecked Sendable {
     private let lock = NSLock()
     private var appendedBatches: [[String]] = []
     private var createRequest: CreateRequest?
+    private var createCalls = 0
 
     var appended: [[String]] { lock.lock(); defer { lock.unlock() }; return appendedBatches }
     var lastCreateRequest: CreateRequest? { lock.lock(); defer { lock.unlock() }; return createRequest }
+    var createCallCount: Int { lock.lock(); defer { lock.unlock() }; return createCalls }
 
     init(savedID: String? = nil,
          restored: SpotifySession? = nil,
@@ -108,8 +127,16 @@ final class SpotifyFake: SpotifyProviding, @unchecked Sendable {
 
     func createPlaylist(name: String, description: String, trackURIs: [String],
                         progress: @escaping @Sendable (Double, String) -> Void) async throws -> SpotifyPlaylistResult {
-        lock.lock(); createRequest = CreateRequest(name: name, description: description, uris: trackURIs); lock.unlock()
+        lock.lock()
+        createRequest = CreateRequest(name: name, description: description, uris: trackURIs)
+        createCalls += 1
+        lock.unlock()
+        if let createDelay { try? await Task.sleep(nanoseconds: createDelay) }
         if let createError { throw createError }
+        if let partialCreation {
+            throw SpotifyPartialCreationFailure(id: partialCreation.id, url: partialCreation.url,
+                                                added: partialCreation.added, underlying: failure)
+        }
         progress(1, "Done")
         return SpotifyPlaylistResult(id: "playlist-id", url: "https://open.spotify.com/playlist/id", added: trackURIs.count)
     }

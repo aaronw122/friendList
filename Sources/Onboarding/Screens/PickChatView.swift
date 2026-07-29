@@ -149,7 +149,8 @@ struct PickChatView: View {
 
             Spacer(minLength: 8)
 
-            Text("\(chat.links) \(chat.links == 1 ? "song" : "songs")")
+            // Counts come from a bounded recent-message window, not the full history.
+            Text("\(chat.links) recent \(chat.links == 1 ? "song" : "songs")")
                 .font(UIFont2.mono(11))
                 .foregroundStyle(Palette.faint)
         }

@@ -78,7 +78,10 @@ struct ScanningView: View {
 
     var body: some View {
         ZStack {
-            if done {
+            if done, let message = state.scanError {
+                ScanErrorView(message: message, onRetry: retry)
+                    .transition(.opacity)
+            } else if done {
                 ScanResultView(found: state.found, chatName: state.selectedChatName)
                     .transition(.opacity.combined(with: .move(edge: .trailing)))
             } else {
@@ -105,6 +108,48 @@ struct ScanningView: View {
         guard !Task.isCancelled, state.step == 4 else { return }
         done = true
     }
+
+    private func retry() {
+        ran = false
+        done = false
+        Task { await runScan() }
+    }
+}
+
+// MARK: - Scan error ("Couldn't read this chat")
+
+private struct ScanErrorView: View {
+    let message: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 0) {
+                Text("Couldn't read this chat")
+                    .font(UIFont2.ui(28, 800))
+                    .tracking(-0.03 * 28)
+                    .foregroundStyle(Palette.ink)
+
+                Text(message)
+                    .font(UIFont2.ui(15, 500))
+                    .foregroundStyle(Palette.body)
+                    .lineSpacing(6)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            SheetFooter(
+                backTitle: nil,
+                onBack: nil,
+                primaryTitle: "Try again",
+                primaryEnabled: true,
+                onPrimary: onRetry
+            )
+        }
+    }
 }
 
 // MARK: - Scan result ("We found X songs")
@@ -120,6 +165,13 @@ private struct ScanResultView: View {
         VStack(spacing: 0) {
             centerBlock
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if state.shortLinkCount > 0 {
+                Text("Skipped \(state.shortLinkCount) spotify.link short \(state.shortLinkCount == 1 ? "link" : "links") we can't match yet")
+                    .font(UIFont2.ui(12))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.bottom, 10)
+            }
 
             SheetFooter(
                 backTitle: nil,

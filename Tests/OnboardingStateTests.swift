@@ -130,18 +130,8 @@ private final class PersistenceFake: PersistenceProviding {
     var seenURIs: [String: Set<String>] = [:]
 
     func loadPlaylists() -> [SavedPlaylist]? { savedPlaylists }
-    func upsertPlaylists(_ updates: [SavedPlaylist]) {
-        for update in updates {
-            if let i = savedPlaylists.firstIndex(where: {
-                update.spotifyID.isEmpty ? ($0.name == update.name && $0.chatGUID == update.chatGUID)
-                                         : $0.spotifyID == update.spotifyID
-            }) {
-                savedPlaylists[i] = update
-            } else {
-                savedPlaylists.append(update)
-            }
-        }
-    }
+    // Delegates to the real matching/upsert core so the fake cannot drift from production behavior.
+    func upsertPlaylists(_ updates: [SavedPlaylist]) { Persistence.upsert(updates, into: &savedPlaylists) }
     func recordSeen(spotifyID: String, uris: [String]) { seenURIs[spotifyID, default: []].formUnion(uris) }
     func seen(forSpotifyID id: String) -> Set<String> { seenURIs[id] ?? [] }
 }

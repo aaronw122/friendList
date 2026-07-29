@@ -88,12 +88,17 @@ enum Persistence {
     static func upsertPlaylists(_ updates: [SavedPlaylist]) {
         guard !updates.isEmpty else { return }
         mutateStore { store in
-            for update in updates {
-                if let index = store.playlists.firstIndex(where: { playlistsMatch($0, update) }) {
-                    store.playlists[index] = update
-                } else {
-                    store.playlists.append(update)
-                }
+            upsert(updates, into: &store.playlists)
+        }
+    }
+
+    /// Shared matching/upsert core so in-memory test fakes delegate here instead of re-implementing it.
+    static func upsert(_ updates: [SavedPlaylist], into playlists: inout [SavedPlaylist]) {
+        for update in updates {
+            if let index = playlists.firstIndex(where: { playlistsMatch($0, update) }) {
+                playlists[index] = update
+            } else {
+                playlists.append(update)
             }
         }
     }

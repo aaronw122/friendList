@@ -7,33 +7,14 @@ struct SyncOutcome: Sendable, Equatable {
     let skippedReason: String?
 }
 
-// UI-free sync core shared by the in-app run and the headless agent. Depends only on the
-// messaging, Spotify, and Persistence abstractions — no SwiftUI. A whole run holds one
-// cross-process advisory lock (spanning the Spotify token refresh) so the GUI and headless
-// processes never both spend the single-use rotating refresh token; every read of
-// seen/playlists happens fresh inside that lock.
+// UI-free sync core used by the headless agent.
 struct PlaylistSync {
-    // How the caller wants the lock acquired.
-    enum Trigger {
-        case background     // launch/background: skip immediately if another run holds the lock
-        case userInitiated  // "Sync now": wait up to the budget, then report already-running
-    }
-
     let messages: MessagesReading
     let spotify: SpotifyProviding
     let persistence: PersistenceProviding
     let status: SyncStatus
-    // Bounded-blocking budget for userInitiated; small and injectable so tests stay fast.
-    var busyWait: TimeInterval = 3
-    var busyPoll: TimeInterval = 0.1
-
     @discardableResult
-    func syncAll(trigger: Trigger) async -> [SyncOutcome] {
-        guard await acquireLock(trigger: trigger) else {
-            if trigger == .userInitiated { await status.reportAlreadyRunning() }
-            return []
-        }
-        defer { persistence.releaseSyncLock() }
+    func syncAll() async -> [SyncOutcome] {
         await status.begin()
 
         // A nil load means a corrupt/torn store: abort rather than proceed on empty seen
@@ -100,26 +81,9 @@ struct PlaylistSync {
         return outcomes
     }
 
-    // MARK: - Lock
-
-    private func acquireLock(trigger: Trigger) async -> Bool {
-        switch trigger {
-        case .background:
-            return persistence.acquireSyncLock(blocking: false)
-        case .userInitiated:
-            let deadline = Date().addingTimeInterval(busyWait)
-            while true {
-                if persistence.acquireSyncLock(blocking: false) { return true }
-                if Date() >= deadline { return false }
-                try? await Task.sleep(nanoseconds: UInt64(busyPoll * 1_000_000_000))
-            }
-        }
-    }
-
     // MARK: - Reconcile
 
-    // songCount == songs sent, derived from seen and merged into the playlists file via the
-    // lock-guarded upsert (a fresh read-modify-write), so it survives a long-open GUI snapshot.
+    // songCount is derived from seen and merged into the playlists file.
     private func reconcileSongCount(_ playlist: SavedPlaylist) {
         var updated = playlist
         updated.songCount = persistence.seen(forSpotifyID: playlist.spotifyID).count

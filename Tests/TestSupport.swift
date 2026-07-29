@@ -6,27 +6,20 @@ import XCTest
 
 // MARK: - Temp-store base case
 
-/// Points `Persistence` at a throwaway store directory + legacy defaults suite for the duration of
-/// a test, and cleans both up afterward. Subclasses that need extra setup override and call super.
+/// Points `Persistence` at a throwaway store directory for the duration of a test, and cleans it
+/// up afterward. Subclasses that need extra setup override and call super.
 class PersistenceTestCase: XCTestCase {
     var dir: URL!
-    var legacy: UserDefaults!
-    var suiteName: String!
 
     override func setUp() {
         super.setUp()
         dir = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("friendlist-\(UUID().uuidString)", isDirectory: true)
-        suiteName = "friendlist.tests.\(UUID().uuidString)"
-        legacy = UserDefaults(suiteName: suiteName)
         Persistence.storeDirectoryOverride = dir
-        Persistence.legacyDefaults = legacy
     }
 
     override func tearDown() {
         Persistence.storeDirectoryOverride = nil
-        Persistence.legacyDefaults = .standard
-        legacy.removePersistentDomain(forName: suiteName)
         try? FileManager.default.removeItem(at: dir)
         super.tearDown()
     }

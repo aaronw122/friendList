@@ -3,14 +3,16 @@ import XCTest
 
 final class HeadlessSyncTests: PersistenceTestCase {
     private var defaults: UserDefaults!
+    private var defaultsSuite: String!
 
     override func setUp() {
         super.setUp()
-        defaults = UserDefaults(suiteName: "\(suiteName!).store")
+        defaultsSuite = "friendlist.headless.\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: defaultsSuite)
     }
 
     override func tearDown() {
-        defaults.removePersistentDomain(forName: "\(suiteName!).store")
+        defaults.removePersistentDomain(forName: defaultsSuite)
         super.tearDown()
     }
 

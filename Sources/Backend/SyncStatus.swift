@@ -1,9 +1,7 @@
 import Foundation
 import Combine
 
-// Shared observable status both Wave-3 surfaces (the SwiftUI app and the headless entry)
-// consume. UI-free on purpose: ObservableObject/@Published only, no Views. PlaylistSync
-// is the sole writer; consumers observe. @MainActor so publishes land on the UI thread.
+// One headless run's result: PlaylistSync writes it; HeadlessSync reads it to decide whether to notify.
 @MainActor
 final class SyncStatus: ObservableObject {
     @Published private(set) var lastSyncDate: Date?
@@ -29,11 +27,5 @@ final class SyncStatus: ObservableObject {
     func fail(_ message: String) {
         isSyncing = false
         lastSyncError = message
-    }
-
-    // The user-initiated button couldn't get the lock within its wait budget.
-    func reportAlreadyRunning() {
-        isSyncing = false
-        lastSyncError = "Sync already running"
     }
 }

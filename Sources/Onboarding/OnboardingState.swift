@@ -64,9 +64,6 @@ final class OnboardingState {
     @ObservationIgnored let messages: MessagesReading
     @ObservationIgnored let spotify: SpotifyProviding
     @ObservationIgnored var persistence: PersistenceProviding
-    // Shared sync status the Home UI observes; PlaylistSync is its sole writer.
-    @ObservationIgnored let syncStatus = SyncStatus()
-    @ObservationIgnored private var launchSyncStarted = false
     @ObservationIgnored private var accessPollTask: Task<Void, Never>?
     @ObservationIgnored private var createInFlight = false
     @ObservationIgnored private var chatsLoading = false
@@ -355,38 +352,7 @@ final class OnboardingState {
         }
     }
 
-    // MARK: - Background sync
-
-    /// The launch-sync seam the app entry (normal and headless) calls once on startup.
-    /// Runs a non-blocking background sync only when onboarded with ≥1 playlist, then refreshes
-    /// Home counts. A no-op otherwise; safe to call repeatedly and never blocks startup.
-    @MainActor
-    func startLaunchSyncIfOnboarded() {
-        guard !launchSyncStarted else { return }
-        launchSyncStarted = true
-        guard persistence.didOnboard, !lists.isEmpty else { return }
-        let sync = PlaylistSync(messages: messages, spotify: spotify,
-                                persistence: persistence, status: syncStatus)
-        // Detached so the chat scan hops off the main thread and app startup isn't blocked.
-        Task.detached(priority: .background) { [weak self] in
-            await sync.syncAll(trigger: .background)
-            await self?.reloadLists()
-        }
-    }
-
-    /// "Sync now": user-initiated run that bounded-waits on the lock and reports already-running
-    /// rather than silently skipping. Fire-and-forget; the UI observes syncStatus.isSyncing.
-    @MainActor
-    func syncNow() {
-        let sync = PlaylistSync(messages: messages, spotify: spotify,
-                                persistence: persistence, status: syncStatus)
-        Task.detached(priority: .userInitiated) { [weak self] in
-            await sync.syncAll(trigger: .userInitiated)
-            await self?.reloadLists()
-        }
-    }
-
-    /// Re-read the playlists file after a run so Home counts update in place.
+    // Re-read playlists from the scheduled sync's persisted store.
     @MainActor
     func reloadLists() {
         lists = Self.mapped(persistence.loadPlaylists() ?? [])

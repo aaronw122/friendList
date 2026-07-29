@@ -16,9 +16,6 @@ protocol PersistenceProviding {
     func upsertPlaylists(_ updates: [SavedPlaylist])
     func recordSeen(spotifyID: String, uris: [String])
     func seen(forSpotifyID id: String) -> Set<String>
-    // The cross-process run lock the sync core wraps around an entire run.
-    func acquireSyncLock(blocking: Bool) -> Bool
-    func releaseSyncLock()
 }
 
 struct AppPersistence: PersistenceProviding {
@@ -36,15 +33,9 @@ struct AppPersistence: PersistenceProviding {
     func upsertPlaylists(_ updates: [SavedPlaylist]) { Persistence.upsertPlaylists(updates) }
     func recordSeen(spotifyID: String, uris: [String]) { Persistence.recordSeen(spotifyID: spotifyID, uris: uris) }
     func seen(forSpotifyID id: String) -> Set<String> { Persistence.seen(forSpotifyID: id) }
-    func acquireSyncLock(blocking: Bool) -> Bool { Persistence.acquireSyncLock(blocking: blocking) }
-    func releaseSyncLock() { Persistence.releaseSyncLock() }
 }
 
-// The cross-process state lives in one JSON file under Application Support: `seen`
-// (dedup map keyed by spotifyID) and the created playlists. Reads are lock-free
-// (atomic rename means no torn read); every write funnels through `mutateStore`
-// under a dedicated advisory `sync.lock`, so the GUI and headless agent never
-// clobber each other. A decode failure aborts rather than wiping good data.
+// The file store holds spotifyID-keyed dedup state and created playlists.
 struct StoreFile: Codable {
     var schemaVersion: Int
     var seen: [String: [String]]
@@ -59,9 +50,8 @@ enum Persistence {
     private static let decoder = JSONDecoder()
     private static let schemaVersion = 1
 
-    // Test seams: point the store at a temp dir and feed migration a scratch defaults.
+    // Test seam: point the store at a temp dir.
     static var storeDirectoryOverride: URL?
-    static var legacyDefaults: UserDefaults = .standard
 
     // MARK: FDA relaunch resume
     private static let kResumeAtPicker = "friendlist.resumeAtPicker"
@@ -87,41 +77,18 @@ enum Persistence {
     private static var storeURL: URL { storeDir.appendingPathComponent("store.json") }
     private static var backupURL: URL { storeDir.appendingPathComponent("store.json.bak") }
     private static var corruptURL: URL { storeDir.appendingPathComponent("store.json.corrupt") }
-    static var lockURL: URL { storeDir.appendingPathComponent("sync.lock") }
 
     private static func ensureDir() {
         try? fm.createDirectory(at: storeDir, withIntermediateDirectories: true)
     }
 
-    // MARK: Cross-process advisory lock
-    // The reusable primitive the sync core wraps around an entire run. The lock is an
-    // fd-based flock: associated with the open file description and the process, not a
-    // thread, so the run can hold it across awaits (including the Spotify token refresh)
-    // without any thread-affinity mutex spanning a suspension point. Non-blocking acquire
-    // skips when another process is active; blocking is for the user-initiated "Sync now".
-    // Reference-counted so a mutate re-entering inside a run reuses the held fd instead of
-    // opening a second one, which would conflict with the process's own lock.
-    private static let crossLock = CrossProcessLock { lockURL }
-    // Serializes only the synchronous read-fresh -> mutate -> write section; never held
-    // across an await, so its thread affinity is always sound.
+    // Serializes the synchronous read-fresh -> mutate -> write section.
     private static let storeMutex = NSRecursiveLock()
-
-    @discardableResult
-    static func withSyncLock<T>(blocking: Bool, _ body: () throws -> T) rethrows -> T? {
-        guard crossLock.acquire(blocking: blocking) else { return nil }
-        defer { crossLock.release() }
-        return try body()
-    }
-
-    @discardableResult
-    static func acquireSyncLock(blocking: Bool) -> Bool { crossLock.acquire(blocking: blocking) }
-    static func releaseSyncLock() { crossLock.release() }
 
     // MARK: Playlists
     static func loadPlaylists() -> [SavedPlaylist]? { currentStore()?.playlists }
 
-    // The single writer path for the playlists file, carrying PR #8's upsert-by-
-    // spotifyID merge (name+chatGUID fallback) forward under the lock.
+    // The playlist writer keeps the spotifyID merge with a name and chat fallback.
     static func upsertPlaylists(_ updates: [SavedPlaylist]) {
         guard !updates.isEmpty else { return }
         mutateStore { store in
@@ -166,11 +133,9 @@ enum Persistence {
     // (mutation aborted, good bytes preserved) rather than wiping seen/playlists.
     @discardableResult
     static func mutateStore<T>(_ body: (inout StoreFile) -> T) -> T? {
-        guard crossLock.acquire(blocking: true) else { return nil }
-        defer { crossLock.release() }
         storeMutex.lock()
         defer { storeMutex.unlock() }
-        guard var store = loadOrMigrateLocked() else { return nil }
+        guard var store = loadOrCreateLocked() else { return nil }
         let result = body(&store)
         writeStore(store)
         return result
@@ -184,11 +149,9 @@ enum Persistence {
             stashCorrupt(raw)
             return nil
         case .fresh:
-            guard crossLock.acquire(blocking: true) else { return nil }
-            defer { crossLock.release() }
             storeMutex.lock()
             defer { storeMutex.unlock() }
-            return loadOrMigrateLocked()
+            return loadOrCreateLocked()
         }
     }
 
@@ -206,9 +169,8 @@ enum Persistence {
         return .decoded(store)
     }
 
-    // Must run under the lock: materializes the file on first-ever access (one-time
-    // migration from the legacy UserDefaults `seen`/`playlists`), nil == corrupt.
-    private static func loadOrMigrateLocked() -> StoreFile? {
+    // Materializes an empty store on first access; nil means corrupt.
+    private static func loadOrCreateLocked() -> StoreFile? {
         switch readStoreRaw() {
         case .decoded(let store):
             return store
@@ -216,7 +178,7 @@ enum Persistence {
             stashCorrupt(raw)
             return nil
         case .fresh:
-            let built = migrateFromLegacy()
+            let built = StoreFile(schemaVersion: schemaVersion, seen: [:], playlists: [], authorizationDate: nil)
             writeStore(built)
             return built
         }
@@ -234,89 +196,5 @@ enum Persistence {
     private static func stashCorrupt(_ raw: Data) {
         ensureDir()
         try? raw.write(to: corruptURL, options: .atomic)
-    }
-
-    // MARK: One-time migration (chatGUID-keyed UserDefaults → spotifyID-keyed file)
-    private static let kPlaylists = "friendlist.playlists"
-    private static let kPlaylistsCorrupt = "friendlist.playlists.corrupt"
-    private static let kSeen = "friendlist.seen"
-
-    private static func migrateFromLegacy() -> StoreFile {
-        let playlists = legacyPlaylists()
-        let legacySeen = legacySeenMap()
-        var seen: [String: [String]] = [:]
-        for playlist in playlists where !playlist.spotifyID.isEmpty {
-            guard let uris = legacySeen[playlist.chatGUID] else { continue }
-            var set = Set(seen[playlist.spotifyID] ?? [])
-            set.formUnion(uris)
-            seen[playlist.spotifyID] = Array(set)
-        }
-        return StoreFile(schemaVersion: schemaVersion, seen: seen, playlists: playlists, authorizationDate: nil)
-    }
-
-    private static func legacyPlaylists() -> [SavedPlaylist] {
-        guard let raw = legacyDefaults.object(forKey: kPlaylists) else { return [] }
-        guard let data = raw as? Data,
-              let list = try? decoder.decode([SavedPlaylist].self, from: data)
-        else {
-            legacyDefaults.set(raw, forKey: kPlaylistsCorrupt)
-            return []
-        }
-        return list
-    }
-
-    private static func legacySeenMap() -> [String: [String]] {
-        guard let data = legacyDefaults.data(forKey: kSeen),
-              let map = try? decoder.decode([String: [String]].self, from: data)
-        else { return [:] }
-        return map
-    }
-}
-
-// Advisory `flock` on a dedicated file. The lock lives on the open file description and
-// the process (not a thread), so the run may hold it across awaits. A `count` guarded by
-// a plain gate — taken and dropped within each synchronous acquire/release, never across
-// an await — reference-counts holders so a nested mutate reuses the single held fd rather
-// than opening a second one (which would block on the process's own lock).
-private final class CrossProcessLock {
-    private let pathProvider: () -> URL
-    private let gate = NSLock()
-    private var fd: Int32 = -1
-    private var count = 0
-
-    init(path: @escaping () -> URL) { pathProvider = path }
-
-    func acquire(blocking: Bool) -> Bool {
-        gate.lock()
-        defer { gate.unlock() }
-        if count > 0 {
-            count += 1
-            return true
-        }
-        let url = pathProvider()
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        let handle = open(url.path, O_RDONLY | O_CREAT, 0o644)
-        guard handle >= 0 else { return false }
-        let operation = LOCK_EX | (blocking ? 0 : LOCK_NB)
-        guard flock(handle, operation) == 0 else {
-            close(handle)
-            return false
-        }
-        fd = handle
-        count = 1
-        return true
-    }
-
-    func release() {
-        gate.lock()
-        defer { gate.unlock() }
-        guard count > 0 else { return }
-        count -= 1
-        if count == 0 {
-            flock(fd, LOCK_UN)
-            close(fd)
-            fd = -1
-        }
     }
 }

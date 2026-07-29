@@ -81,7 +81,7 @@ enum HeadlessSync {
                              defaults: UserDefaults = .standard) async -> HeadlessRunResult {
         let status = SyncStatus()
         let sync = PlaylistSync(messages: messages, spotify: spotify, persistence: persistence, status: status)
-        let outcomes = await sync.syncAll(trigger: .background)
+        let outcomes = await sync.syncAll()
 
         let failure: String?
         if let error = status.lastSyncError {

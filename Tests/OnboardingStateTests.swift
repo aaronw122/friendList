@@ -122,7 +122,5 @@ private final class PersistenceFake: PersistenceProviding {
     }
     func recordSeen(spotifyID: String, uris: [String]) { seenURIs[spotifyID, default: []].formUnion(uris) }
     func seen(forSpotifyID id: String) -> Set<String> { seenURIs[id] ?? [] }
-    func acquireSyncLock(blocking: Bool) -> Bool { true }
-    func releaseSyncLock() {}
 }
 // MessagesFake / SpotifyFake are shared — see TestSupport.swift.

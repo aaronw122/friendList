@@ -13,7 +13,7 @@ final class PlaylistSyncTests: PersistenceTestCase {
         let status = SyncStatus()
         let sync = PlaylistSync(messages: messages, spotify: spotify, persistence: AppPersistence(), status: status)
 
-        let outcomes = await sync.syncAll(trigger: .background)
+        let outcomes = await sync.syncAll()
 
         // Only the two unseen URIs are appended.
         XCTAssertEqual(spotify.appended.flatMap { $0 }, [uri(1), uri(2)])
@@ -35,7 +35,7 @@ final class PlaylistSyncTests: PersistenceTestCase {
         let sync = PlaylistSync(messages: MessagesFake(uris: [uri(0), uri(1)]),
                                 spotify: spotify, persistence: AppPersistence(), status: SyncStatus())
 
-        let outcomes = await sync.syncAll(trigger: .background)
+        let outcomes = await sync.syncAll()
 
         XCTAssertTrue(spotify.appended.isEmpty)
         XCTAssertEqual(outcomes, [SyncOutcome(playlistName: "P", added: 0, skippedReason: nil)])
@@ -54,7 +54,7 @@ final class PlaylistSyncTests: PersistenceTestCase {
         failing.failure = SpotifyError.http(500, "server error")
         let firstRun = PlaylistSync(messages: messages, spotify: failing,
                                     persistence: AppPersistence(), status: SyncStatus())
-        let firstOutcomes = await firstRun.syncAll(trigger: .background)
+        let firstOutcomes = await firstRun.syncAll()
 
         // The landed first batch is recorded; the run reports a transient skip, not reconnect.
         XCTAssertEqual(Persistence.seen(forSpotifyID: "P"), Set(scanned.prefix(100)))
@@ -63,7 +63,7 @@ final class PlaylistSyncTests: PersistenceTestCase {
         let healthy = SpotifyFake()
         let secondRun = PlaylistSync(messages: messages, spotify: healthy,
                                      persistence: AppPersistence(), status: SyncStatus())
-        _ = await secondRun.syncAll(trigger: .background)
+        _ = await secondRun.syncAll()
 
         // The re-run only sends the tracks not already landed — no double-add.
         XCTAssertEqual(healthy.appended.flatMap { $0 }, Array(scanned.suffix(100)))
@@ -82,7 +82,7 @@ final class PlaylistSyncTests: PersistenceTestCase {
         let sync = PlaylistSync(messages: MessagesFake(uris: [uri(0)]),
                                 spotify: spotify, persistence: AppPersistence(), status: status)
 
-        let outcomes = await sync.syncAll(trigger: .background)
+        let outcomes = await sync.syncAll()
 
         XCTAssertTrue(Persistence.seen(forSpotifyID: "P").isEmpty)
         XCTAssertEqual(outcomes.first?.skippedReason, "reconnect Spotify")
@@ -102,7 +102,7 @@ final class PlaylistSyncTests: PersistenceTestCase {
         let sync = PlaylistSync(messages: MessagesFake(uris: [uri(0)]),
                                 spotify: spotify, persistence: AppPersistence(), status: status)
 
-        let outcomes = await sync.syncAll(trigger: .background)
+        let outcomes = await sync.syncAll()
 
         XCTAssertEqual(outcomes.first?.skippedReason, "temporary error, will retry")
         XCTAssertFalse(status.needsReconnect)
@@ -122,7 +122,7 @@ final class PlaylistSyncTests: PersistenceTestCase {
             let sync = PlaylistSync(messages: MessagesFake(uris: [uri(0)]),
                                     spotify: spotify, persistence: AppPersistence(), status: SyncStatus())
 
-            let outcomes = await sync.syncAll(trigger: .background)
+            let outcomes = await sync.syncAll()
             XCTAssertEqual(outcomes.first?.skippedReason, reason)
         }
     }
@@ -135,40 +135,8 @@ final class PlaylistSyncTests: PersistenceTestCase {
         let sync = PlaylistSync(messages: MessagesFake(uris: [uri(0)], readable: false),
                                 spotify: SpotifyFake(), persistence: AppPersistence(), status: SyncStatus())
 
-        let outcomes = await sync.syncAll(trigger: .background)
+        let outcomes = await sync.syncAll()
         XCTAssertEqual(outcomes.first?.skippedReason, "no Full Disk Access")
-    }
-
-    // MARK: non-blocking acquire returns immediately when the lock is held elsewhere
-
-    @MainActor
-    func testBackgroundSkipsImmediatelyWhenLockBusy() async {
-        let messages = MessagesFake(uris: [uri(0)])
-        let spotify = SpotifyFake()
-        let sync = PlaylistSync(messages: messages, spotify: spotify,
-                                persistence: BusyPersistence(), status: SyncStatus())
-
-        let outcomes = await sync.syncAll(trigger: .background)
-
-        XCTAssertTrue(outcomes.isEmpty)
-        XCTAssertFalse(messages.canReadCalled, "must not touch the chat when it can't get the lock")
-        XCTAssertTrue(spotify.appended.isEmpty)
-    }
-
-    // MARK: bounded-blocking acquire gives up and reports already-running
-
-    @MainActor
-    func testUserInitiatedReportsAlreadyRunningWhenLockNeverFrees() async {
-        let status = SyncStatus()
-        var sync = PlaylistSync(messages: MessagesFake(uris: [uri(0)]), spotify: SpotifyFake(),
-                                persistence: BusyPersistence(), status: status)
-        sync.busyWait = 0.15
-        sync.busyPoll = 0.05
-
-        let outcomes = await sync.syncAll(trigger: .userInitiated)
-
-        XCTAssertTrue(outcomes.isEmpty)
-        XCTAssertEqual(status.lastSyncError, "Sync already running")
     }
 
     // MARK: helpers
@@ -181,16 +149,4 @@ final class PlaylistSyncTests: PersistenceTestCase {
     }
 }
 
-// MARK: - Fakes (MessagesFake / SpotifyFake are shared — see TestSupport.swift)
-
-// Always refuses the lock, so the run can't acquire it — simulates another active process.
-private struct BusyPersistence: PersistenceProviding {
-    var didOnboard = false
-    var authorizationDate: Date?
-    func loadPlaylists() -> [SavedPlaylist]? { [] }
-    func upsertPlaylists(_ updates: [SavedPlaylist]) {}
-    func recordSeen(spotifyID: String, uris: [String]) {}
-    func seen(forSpotifyID id: String) -> Set<String> { [] }
-    func acquireSyncLock(blocking: Bool) -> Bool { false }
-    func releaseSyncLock() {}
-}
+// MessagesFake / SpotifyFake are shared in TestSupport.swift.

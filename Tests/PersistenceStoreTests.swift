@@ -49,39 +49,6 @@ final class PersistenceStoreTests: PersistenceTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("store.json.corrupt").path))
     }
 
-    // MARK: migration
-
-    func testMigrationCopiesChatSeenToEachSpotifyIDIndependently() {
-        seedLegacy(
-            playlists: [
-                saved(spotifyID: "S1", chatGUID: "G"),
-                saved(spotifyID: "S2", chatGUID: "G"),
-                saved(spotifyID: "", chatGUID: "H"),
-            ],
-            seen: ["G": ["u1", "u2"], "H": ["u3"]]
-        )
-
-        XCTAssertEqual(Persistence.seen(forSpotifyID: "S1"), ["u1", "u2"])
-        XCTAssertEqual(Persistence.seen(forSpotifyID: "S2"), ["u1", "u2"])
-        XCTAssertEqual(Persistence.loadPlaylists()?.count, 3)
-
-        Persistence.recordSeen(spotifyID: "S1", uris: ["u9"])
-        XCTAssertEqual(Persistence.seen(forSpotifyID: "S1"), ["u1", "u2", "u9"])
-        XCTAssertEqual(Persistence.seen(forSpotifyID: "S2"), ["u1", "u2"])
-    }
-
-    func testMigrationRunsExactlyOnce() {
-        seedLegacy(playlists: [saved(spotifyID: "S1", chatGUID: "G")], seen: ["G": ["u1"]])
-
-        XCTAssertEqual(Persistence.loadPlaylists()?.count, 1)
-
-        seedLegacy(
-            playlists: [saved(spotifyID: "S1", chatGUID: "G"), saved(spotifyID: "S2", chatGUID: "G")],
-            seen: ["G": ["u1"]]
-        )
-        XCTAssertEqual(Persistence.loadPlaylists()?.count, 1, "store already materialized; legacy must not re-migrate")
-    }
-
     // MARK: authorization date
 
     func testAuthorizationDateRoundTrips() {
@@ -91,49 +58,4 @@ final class PersistenceStoreTests: PersistenceTestCase {
 
         XCTAssertEqual(Persistence.authorizationDate?.timeIntervalSince1970 ?? 0, date.timeIntervalSince1970, accuracy: 0.001)
     }
-
-    // MARK: lock
-
-    func testNonBlockingLockReentersWithinProcess() {
-        let outer = Persistence.withSyncLock(blocking: false) { () -> Bool in
-            Persistence.withSyncLock(blocking: false) { true } ?? false
-        }
-        XCTAssertEqual(outer, true)
-    }
-
-    // Holds the cross-process run lock across awaits with real thread hops (an actor hop
-    // and a detached-task release), the way the sync core will — no deadlock, no unlock
-    // from a non-owning context, correct data.
-    func testRunLockHeldAcrossAwaitsWithThreadHops() async {
-        XCTAssertTrue(Persistence.acquireSyncLock(blocking: false))
-
-        Persistence.recordSeen(spotifyID: "A", uris: ["u1"])
-
-        let hopper = LockHopper()
-        await hopper.recordSecond()
-        await Task.yield()
-
-        await Task.detached { Persistence.releaseSyncLock() }.value
-
-        XCTAssertEqual(Persistence.seen(forSpotifyID: "A"), ["u1", "u2"])
-
-        XCTAssertTrue(Persistence.acquireSyncLock(blocking: false), "lock fully released and reacquirable")
-        Persistence.releaseSyncLock()
-    }
-
-    // MARK: helpers
-
-    private func saved(spotifyID: String, chatGUID: String) -> SavedPlaylist {
-        SavedPlaylist(spotifyID: spotifyID, name: "n-\(spotifyID)", songCount: 0,
-                      chatName: "c", chatGUID: chatGUID, externalURL: "")
-    }
-
-    private func seedLegacy(playlists: [SavedPlaylist], seen: [String: [String]]) {
-        legacy.set(try! JSONEncoder().encode(playlists), forKey: "friendlist.playlists")
-        legacy.set(try! JSONEncoder().encode(seen), forKey: "friendlist.seen")
-    }
-}
-
-private actor LockHopper {
-    func recordSecond() { Persistence.recordSeen(spotifyID: "A", uris: ["u2"]) }
 }

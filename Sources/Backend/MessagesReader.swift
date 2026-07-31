@@ -61,20 +61,20 @@ struct MessagesReader: MessagesReading {
 
     /// One chat row per transport; rows sharing `chat_identifier` are the same conversation.
     struct ChatRow {
-        let rowid: Int64
+        let rowID: Int64
         let guid: String
         let identifier: String
-        let display: String
-        let msgCount: Int
-        let last: Int64
+        let displayName: String
+        let messageCount: Int
+        let lastDate: Int64
     }
 
     struct MergedChat {
         let canonical: ChatRow
         let rowIDs: [Int64]
-        let display: String
-        let msgCount: Int
-        let last: Int64
+        let displayName: String
+        let messageCount: Int
+        let lastDate: Int64
     }
 
     /// Groups transport siblings into one logical chat; the iMessage guid wins canonically (then lexicographic) so persistence keys stay stable.
@@ -91,14 +91,14 @@ struct MessagesReader: MessagesReading {
             let canonical = siblings.min { a, b in
                 (a.guid.hasPrefix("iMessage;") ? 0 : 1, a.guid) < (b.guid.hasPrefix("iMessage;") ? 0 : 1, b.guid)
             }!
-            let display = canonical.display.isEmpty
-                ? (siblings.first(where: { !$0.display.isEmpty })?.display ?? "")
-                : canonical.display
+            let displayName = canonical.displayName.isEmpty
+                ? (siblings.first(where: { !$0.displayName.isEmpty })?.displayName ?? "")
+                : canonical.displayName
             return MergedChat(canonical: canonical,
-                              rowIDs: siblings.map(\.rowid),
-                              display: display,
-                              msgCount: siblings.reduce(0) { $0 + $1.msgCount },
-                              last: siblings.map(\.last).max() ?? 0)
+                              rowIDs: siblings.map(\.rowID),
+                              displayName: displayName,
+                              messageCount: siblings.reduce(0) { $0 + $1.messageCount },
+                              lastDate: siblings.map(\.lastDate).max() ?? 0)
         }
     }
 
@@ -125,19 +125,19 @@ struct MessagesReader: MessagesReading {
         try db.query(sql) { row in
             let guid = row.text(1) ?? ""
             guard !guid.isEmpty else { return }
-            rows.append(ChatRow(rowid: row.int(0),
+            rows.append(ChatRow(rowID: row.int(0),
                                 guid: guid,
                                 identifier: row.text(2) ?? "",
-                                display: row.text(3) ?? "",
-                                msgCount: Int(row.int(5)),
-                                last: row.int(6)))
+                                displayName: row.text(3) ?? "",
+                                messageCount: Int(row.int(5)),
+                                lastDate: row.int(6)))
         }
 
-        let merged = Self.mergeSiblings(rows).sorted { $0.last > $1.last }
+        let merged = Self.mergeSiblings(rows).sorted { $0.lastDate > $1.lastDate }
 
         var names: [Int64: String] = [:]
-        for chat in merged where chat.display.isEmpty {
-            names[chat.canonical.rowid] = try participantName(chatRowID: chat.canonical.rowid, db: db)
+        for chat in merged where chat.displayName.isEmpty {
+            names[chat.canonical.rowID] = try participantName(chatRowID: chat.canonical.rowID, db: db)
         }
 
         let recentURIs = try recentLinkURIs(db: db)
@@ -145,9 +145,9 @@ struct MessagesReader: MessagesReading {
         return merged.map { chat in
             let uris = chat.rowIDs.reduce(into: Set<String>()) { $0.formUnion(recentURIs[$1] ?? []) }
             return GroupChat(guid: chat.canonical.guid,
-                             name: chat.display.isEmpty ? (names[chat.canonical.rowid] ?? "Group chat") : chat.display,
-                             messageCount: chat.msgCount,
-                             lastDate: chat.last,
+                             name: chat.displayName.isEmpty ? (names[chat.canonical.rowID] ?? "Group chat") : chat.displayName,
+                             messageCount: chat.messageCount,
+                             lastDate: chat.lastDate,
                              linkCount: uris.count)
         }
     }

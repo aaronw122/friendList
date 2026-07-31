@@ -31,20 +31,18 @@ final class LoopbackAuthServer: @unchecked Sendable {
         }
     }
 
-    private func finish(_ params: [String: String]?, _ error: Error?) {
+    private func finish(_ outcome: Result<[String: String], Error>) {
         lock.lock()
         guard !finished else { lock.unlock(); return }
         finished = true
         let cont = continuation
         continuation = nil
-        let result: Result<[String: String], Error> =
-            params.map { .success($0) } ?? .failure(error ?? AuthServerError.timedOut)
         // Buffer a result that lands before waitForRedirect registers its continuation.
-        if cont == nil { pending = result }
+        if cont == nil { pending = outcome }
         lock.unlock()
 
         listener?.cancel()
-        cont?.resume(with: result)
+        cont?.resume(with: outcome)
     }
 
     /// Start listening before the browser opens so a fast redirect can't be missed.
@@ -64,7 +62,7 @@ final class LoopbackAuthServer: @unchecked Sendable {
 
         listener.stateUpdateHandler = { [weak self] state in
             if case .failed(let error) = state {
-                self?.finish(nil, AuthServerError.listenerFailed(error.localizedDescription))
+                self?.finish(.failure(AuthServerError.listenerFailed(error.localizedDescription)))
             }
         }
         listener.newConnectionHandler = { [weak self] connection in
@@ -76,7 +74,7 @@ final class LoopbackAuthServer: @unchecked Sendable {
                 // Only the redirect path carrying our own state counts; forged requests can't abort the flow.
                 guard reqPath == self.path, query["state"] == self.expectedState else { return }
                 if query["code"] != nil || query["error"] != nil {
-                    self.finish(query, nil)
+                    self.finish(.success(query))
                 }
             }
         }
@@ -85,7 +83,7 @@ final class LoopbackAuthServer: @unchecked Sendable {
 
     /// Tear down the listener and resume any waiter; safe to call more than once.
     func stop() {
-        finish(nil, CancellationError())
+        finish(.failure(CancellationError()))
     }
 
     /// Wait for the auth redirect; task cancellation tears the wait down immediately.
@@ -104,7 +102,7 @@ final class LoopbackAuthServer: @unchecked Sendable {
                 lock.unlock()
             }
         } onCancel: {
-            finish(nil, CancellationError())
+            finish(.failure(CancellationError()))
         }
     }
 

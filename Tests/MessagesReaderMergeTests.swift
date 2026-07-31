@@ -2,28 +2,28 @@ import XCTest
 @testable import FriendList
 
 final class MessagesReaderMergeTests: XCTestCase {
-    private func row(rowid: Int64, guid: String, identifier: String,
-                     display: String = "", msgCount: Int = 0, last: Int64 = 0) -> MessagesReader.ChatRow {
-        MessagesReader.ChatRow(rowid: rowid, guid: guid, identifier: identifier,
-                               display: display, msgCount: msgCount, last: last)
+    private func row(rowID: Int64, guid: String, identifier: String,
+                     displayName: String = "", messageCount: Int = 0, lastDate: Int64 = 0) -> MessagesReader.ChatRow {
+        MessagesReader.ChatRow(rowID: rowID, guid: guid, identifier: identifier,
+                               displayName: displayName, messageCount: messageCount, lastDate: lastDate)
     }
 
     func testMergesRowsSharingChatIdentifier() {
         let merged = MessagesReader.mergeSiblings([
-            row(rowid: 1, guid: "iMessage;+;chat123", identifier: "chat123", msgCount: 100, last: 50),
-            row(rowid: 2, guid: "SMS;+;chat123", identifier: "chat123", msgCount: 40, last: 80),
+            row(rowID: 1, guid: "iMessage;+;chat123", identifier: "chat123", messageCount: 100, lastDate: 50),
+            row(rowID: 2, guid: "SMS;+;chat123", identifier: "chat123", messageCount: 40, lastDate: 80),
         ])
 
         XCTAssertEqual(merged.count, 1)
         XCTAssertEqual(merged[0].rowIDs, [1, 2])
-        XCTAssertEqual(merged[0].msgCount, 140)
-        XCTAssertEqual(merged[0].last, 80)
+        XCTAssertEqual(merged[0].messageCount, 140)
+        XCTAssertEqual(merged[0].lastDate, 80)
     }
 
     func testCanonicalGuidPrefersIMessageSibling() {
         let merged = MessagesReader.mergeSiblings([
-            row(rowid: 2, guid: "SMS;+;chat123", identifier: "chat123"),
-            row(rowid: 1, guid: "iMessage;+;chat123", identifier: "chat123"),
+            row(rowID: 2, guid: "SMS;+;chat123", identifier: "chat123"),
+            row(rowID: 1, guid: "iMessage;+;chat123", identifier: "chat123"),
         ])
 
         XCTAssertEqual(merged[0].canonical.guid, "iMessage;+;chat123")
@@ -31,8 +31,8 @@ final class MessagesReaderMergeTests: XCTestCase {
 
     func testCanonicalGuidDeterministicWithoutIMessageSibling() {
         let merged = MessagesReader.mergeSiblings([
-            row(rowid: 2, guid: "SMS;+;chat123", identifier: "chat123"),
-            row(rowid: 1, guid: "RCS;+;chat123", identifier: "chat123"),
+            row(rowID: 2, guid: "SMS;+;chat123", identifier: "chat123"),
+            row(rowID: 1, guid: "RCS;+;chat123", identifier: "chat123"),
         ])
 
         XCTAssertEqual(merged[0].canonical.guid, "RCS;+;chat123")
@@ -40,8 +40,8 @@ final class MessagesReaderMergeTests: XCTestCase {
 
     func testDistinctIdentifiersStaySeparate() {
         let merged = MessagesReader.mergeSiblings([
-            row(rowid: 1, guid: "iMessage;+;chatA", identifier: "chatA"),
-            row(rowid: 2, guid: "iMessage;+;chatB", identifier: "chatB"),
+            row(rowID: 1, guid: "iMessage;+;chatA", identifier: "chatA"),
+            row(rowID: 2, guid: "iMessage;+;chatB", identifier: "chatB"),
         ])
 
         XCTAssertEqual(merged.count, 2)
@@ -49,8 +49,8 @@ final class MessagesReaderMergeTests: XCTestCase {
 
     func testEmptyIdentifierFallsBackToGuidKey() {
         let merged = MessagesReader.mergeSiblings([
-            row(rowid: 1, guid: "iMessage;+;chatA", identifier: ""),
-            row(rowid: 2, guid: "SMS;+;chatB", identifier: ""),
+            row(rowID: 1, guid: "iMessage;+;chatA", identifier: ""),
+            row(rowID: 2, guid: "SMS;+;chatB", identifier: ""),
         ])
 
         XCTAssertEqual(merged.count, 2)
@@ -59,10 +59,10 @@ final class MessagesReaderMergeTests: XCTestCase {
 
     func testDisplayNameFallsBackToNamedSibling() {
         let merged = MessagesReader.mergeSiblings([
-            row(rowid: 1, guid: "iMessage;+;chat123", identifier: "chat123", display: ""),
-            row(rowid: 2, guid: "SMS;+;chat123", identifier: "chat123", display: "the boys"),
+            row(rowID: 1, guid: "iMessage;+;chat123", identifier: "chat123", displayName: ""),
+            row(rowID: 2, guid: "SMS;+;chat123", identifier: "chat123", displayName: "the boys"),
         ])
 
-        XCTAssertEqual(merged[0].display, "the boys")
+        XCTAssertEqual(merged[0].displayName, "the boys")
     }
 }

@@ -69,63 +69,17 @@ struct LoaderScaffold: View {
     }
 }
 
-// MARK: - Scanning (step 3)
+// MARK: - Shared retry error surface (used by Scanning + Creating)
 
-struct ScanningView: View {
-    @Environment(OnboardingState.self) private var state
-    @State private var ran = false
-    @State private var done = false
-
-    var body: some View {
-        ZStack {
-            if done, let message = state.scanError {
-                ScanErrorView(message: message, onRetry: retry)
-                    .transition(.opacity)
-            } else if done {
-                ScanResultView(found: state.found, chatName: state.selectedChatName)
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
-            } else {
-                LoaderScaffold(
-                    heading: "Reading \(state.selectedChatName)",
-                    label: state.scanLabel,
-                    pct: state.scanPct,
-                    counter: "\(state.found) songs found"
-                )
-                .transition(.opacity)
-            }
-        }
-        .animation(.easeInOut(duration: 0.4), value: done)
-        .task { await runScan() }
-    }
-
-    @MainActor
-    private func runScan() async {
-        guard !ran else { return }
-        ran = true
-
-        await state.performScan()
-        try? await Task.sleep(for: .milliseconds(400))
-        guard !Task.isCancelled, state.step == 4 else { return }
-        done = true
-    }
-
-    private func retry() {
-        ran = false
-        done = false
-        Task { await runScan() }
-    }
-}
-
-// MARK: - Scan error ("Couldn't read this chat")
-
-private struct ScanErrorView: View {
+struct RetryErrorView: View {
+    let title: String
     let message: String
     let onRetry: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
-                Text("Couldn't read this chat")
+                Text(title)
                     .font(UIFont2.ui(28, 800))
                     .tracking(-0.03 * 28)
                     .foregroundStyle(Palette.ink)
@@ -149,6 +103,53 @@ private struct ScanErrorView: View {
                 onPrimary: onRetry
             )
         }
+    }
+}
+
+// MARK: - Scanning (step 3)
+
+struct ScanningView: View {
+    @Environment(OnboardingState.self) private var state
+    @State private var hasStarted = false
+    @State private var isOutcomeVisible = false
+
+    var body: some View {
+        ZStack {
+            if isOutcomeVisible, let message = state.scanError {
+                RetryErrorView(title: "Couldn't read this chat", message: message, onRetry: retry)
+                    .transition(.opacity)
+            } else if isOutcomeVisible {
+                ScanResultView(found: state.found, chatName: state.selectedChatName)
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+            } else {
+                LoaderScaffold(
+                    heading: "Reading \(state.selectedChatName)",
+                    label: state.scanLabel,
+                    pct: state.scanPct,
+                    counter: "\(state.found) songs found"
+                )
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.4), value: isOutcomeVisible)
+        .task { await runScan() }
+    }
+
+    @MainActor
+    private func runScan() async {
+        guard !hasStarted else { return }
+        hasStarted = true
+
+        await state.performScan()
+        try? await Task.sleep(for: .milliseconds(400))
+        guard !Task.isCancelled, state.step == 4 else { return }
+        isOutcomeVisible = true
+    }
+
+    private func retry() {
+        hasStarted = false
+        isOutcomeVisible = false
+        Task { await runScan() }
     }
 }
 

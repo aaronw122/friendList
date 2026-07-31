@@ -318,13 +318,13 @@ final class OnboardingState {
 
     @MainActor
     func connectSpotify() async {
-        let fromStep = step
         if connected {
-            if step == fromStep { advance() }
+            advance()
             return
         }
         let id = clientId.trimmingCharacters(in: .whitespaces)
         guard !id.isEmpty, !connecting else { return }
+        let entryStep = step
         connecting = true
         connectError = nil
         // Held as a task so cancelConnect() can tear down the browser wait.
@@ -340,7 +340,7 @@ final class OnboardingState {
             connected = true
             connecting = false
             // Browser auth may finish after navigation, so advance only from the consent screen.
-            if step == fromStep { advance() }
+            if step == entryStep { advance() }
         } catch is CancellationError {
             connecting = false
         } catch {
@@ -361,7 +361,7 @@ final class OnboardingState {
         defer { createInFlight = false }
 
         // Capture everything at entry so a completion after navigation can't read drifted state.
-        let fromStep = step
+        let entryStep = step
         let playlistName = name.isEmpty ? selectedChatName : name
         let chatName = selectedChatName
         let chatGUID = pickedChat?.guid ?? ""
@@ -377,14 +377,14 @@ final class OnboardingState {
             createPct = 1
             finishCreation(named: playlistName, chatName: chatName, chatGUID: chatGUID,
                            uris: uris, externalURL: result.url, spotifyID: result.id,
-                           navigate: step == fromStep)
+                           navigate: step == entryStep)
         } catch {
             let underlying = (error as? SpotifyPartialCreationFailure)?.underlying ?? error
             if underlying.isSpotifyAuthenticationFailure {
                 connected = false
                 connectError = "Your Spotify session expired. Please reconnect."
-                if step == fromStep { go(to: 5) }
-            } else if step == fromStep {
+                if step == entryStep { go(to: 5) }
+            } else if step == entryStep {
                 createError = underlying.localizedDescription
                 createLabel = "Couldn't finish"
             }
@@ -399,20 +399,31 @@ final class OnboardingState {
             pendingCreation = nil
         }
         if let pending = pendingCreation {
-            createLabel = "Adding the remaining tracks…"
-            let remaining = Array(uris.dropFirst(pending.added))
-            var landed = pending.added
-            do {
-                _ = try await spotify.appendTracks(playlistID: pending.id, trackURIs: remaining) { batch in
-                    landed += batch.count
-                }
-                return SpotifyPlaylistResult(id: pending.id, url: pending.url, added: uris.count)
-            } catch {
-                pendingCreation = PendingCreation(id: pending.id, url: pending.url,
-                                                  chatGUID: chatGUID, name: name, added: landed)
-                throw error
-            }
+            return try await resumePendingCreation(pending, name: name, chatGUID: chatGUID, uris: uris)
         }
+        return try await createNewPlaylist(name: name, description: description, chatGUID: chatGUID, uris: uris)
+    }
+
+    // Appends only the tracks that haven't landed yet, so retry never duplicates.
+    @MainActor
+    private func resumePendingCreation(_ pending: PendingCreation, name: String, chatGUID: String, uris: [String]) async throws -> SpotifyPlaylistResult {
+        createLabel = "Adding the remaining tracks…"
+        let remaining = Array(uris.dropFirst(pending.added))
+        var addedTrackCount = pending.added
+        do {
+            _ = try await spotify.appendTracks(playlistID: pending.id, trackURIs: remaining) { batch in
+                addedTrackCount += batch.count
+            }
+            return SpotifyPlaylistResult(id: pending.id, url: pending.url, added: uris.count)
+        } catch {
+            pendingCreation = PendingCreation(id: pending.id, url: pending.url,
+                                              chatGUID: chatGUID, name: name, added: addedTrackCount)
+            throw error
+        }
+    }
+
+    @MainActor
+    private func createNewPlaylist(name: String, description: String, chatGUID: String, uris: [String]) async throws -> SpotifyPlaylistResult {
         do {
             return try await spotify.createPlaylist(name: name, description: description, trackURIs: uris) { frac, label in
                 Task { @MainActor in

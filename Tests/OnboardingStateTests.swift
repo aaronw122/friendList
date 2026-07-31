@@ -3,6 +3,9 @@ import XCTest
 
 @MainActor
 final class OnboardingStateTests: XCTestCase {
+
+    // MARK: - Routing and session restore
+
     func testFirstRunRoutesThroughSpotifySetup() async {
         let spotify = SpotifyFake()
         let state = makeState(spotify: spotify)
@@ -57,41 +60,22 @@ final class OnboardingStateTests: XCTestCase {
         }
     }
 
-    func testAuthFailureDuringCreationReturnsToReconnectWithoutPersisting() async {
-        let spotify = SpotifyFake(createError: SpotifyError.http(401, "expired"))
+    func testRestoreRetriesAfterTransientFailure() async {
+        let spotify = SpotifyFake(savedID: "cid", restoreError: SpotifyError.http(500, "server error"))
         let state = makeState(spotify: spotify)
-        state.connected = true
-        state.step = 8
-        state.scannedTrackURIs = ["spotify:track:one"]
 
-        await state.createPlaylist()
-
+        await state.restoreSpotifySession()
         XCTAssertFalse(state.connected)
-        XCTAssertEqual(state.step, 5)
-        XCTAssertTrue(state.lists.isEmpty)
-        XCTAssertEqual(state.connectError, "Your Spotify session expired. Please reconnect.")
+
+        spotify.restoreError = nil
+        spotify.restored = SpotifySession(clientID: "cid", displayName: "Taylor")
+        await state.restoreSpotifySession()
+
+        XCTAssertTrue(state.connected)
+        XCTAssertEqual(state.spotifyDisplayName, "Taylor")
     }
 
-    func testCreationReceivesScannedURIsAndPersistsPlaylist() async {
-        let spotify = SpotifyFake()
-        let persistence = PersistenceFake()
-        let state = makeState(spotify: spotify, persistence: persistence)
-        state.chats = [ChatSample(name: "Friends", links: 2, guid: "chat-guid")]
-        state.pickedID = state.chats[0].id
-        state.name = "Road trip"
-        state.found = 2
-        state.scannedTrackURIs = ["spotify:track:one", "spotify:track:two"]
-
-        await state.createPlaylist()
-
-        let request = spotify.lastCreateRequest
-        XCTAssertEqual(request?.uris, state.scannedTrackURIs)
-        XCTAssertEqual(state.lists.last?.name, "Road trip")
-        XCTAssertEqual(state.lists.last?.spotifyID, "playlist-id")
-        XCTAssertEqual(state.step, 9)
-        XCTAssertEqual(persistence.savedPlaylists.last?.spotifyID, "playlist-id")
-        XCTAssertEqual(persistence.seenURIs["playlist-id"], Set(state.scannedTrackURIs))
-    }
+    // MARK: - Connection cancellation
 
     func testCancelConnectClearsConnectingWithoutError() async throws {
         let spotify = SpotifyFake()
@@ -112,6 +96,8 @@ final class OnboardingStateTests: XCTestCase {
         XCTAssertFalse(state.connected)
         XCTAssertEqual(state.step, 5)
     }
+
+    // MARK: - Scan outcomes
 
     func testStaleScanResultIsDiscarded() async throws {
         let gate = DispatchSemaphore(value: 0)
@@ -151,6 +137,44 @@ final class OnboardingStateTests: XCTestCase {
         XCTAssertEqual(state.scanError, "database unreadable")
         XCTAssertTrue(state.scannedTrackURIs.isEmpty)
         XCTAssertEqual(state.scanPct, 1)
+    }
+
+    // MARK: - Creation and partial retry
+
+    func testCreationReceivesScannedURIsAndPersistsPlaylist() async {
+        let spotify = SpotifyFake()
+        let persistence = PersistenceFake()
+        let state = makeState(spotify: spotify, persistence: persistence)
+        state.chats = [ChatSample(name: "Friends", links: 2, guid: "chat-guid")]
+        state.pickedID = state.chats[0].id
+        state.name = "Road trip"
+        state.found = 2
+        state.scannedTrackURIs = ["spotify:track:one", "spotify:track:two"]
+
+        await state.createPlaylist()
+
+        let request = spotify.lastCreateRequest
+        XCTAssertEqual(request?.uris, state.scannedTrackURIs)
+        XCTAssertEqual(state.lists.last?.name, "Road trip")
+        XCTAssertEqual(state.lists.last?.spotifyID, "playlist-id")
+        XCTAssertEqual(state.step, 9)
+        XCTAssertEqual(persistence.savedPlaylists.last?.spotifyID, "playlist-id")
+        XCTAssertEqual(persistence.seenURIs["playlist-id"], Set(state.scannedTrackURIs))
+    }
+
+    func testAuthFailureDuringCreationReturnsToReconnectWithoutPersisting() async {
+        let spotify = SpotifyFake(createError: SpotifyError.http(401, "expired"))
+        let state = makeState(spotify: spotify)
+        state.connected = true
+        state.step = 8
+        state.scannedTrackURIs = ["spotify:track:one"]
+
+        await state.createPlaylist()
+
+        XCTAssertFalse(state.connected)
+        XCTAssertEqual(state.step, 5)
+        XCTAssertTrue(state.lists.isEmpty)
+        XCTAssertEqual(state.connectError, "Your Spotify session expired. Please reconnect.")
     }
 
     func testRetryAfterPartialCreateAppendsInsteadOfDuplicating() async {
@@ -235,20 +259,7 @@ final class OnboardingStateTests: XCTestCase {
         XCTAssertEqual(state.lists.last?.name, "Changed")
     }
 
-    func testRestoreRetriesAfterTransientFailure() async {
-        let spotify = SpotifyFake(savedID: "cid", restoreError: SpotifyError.http(500, "server error"))
-        let state = makeState(spotify: spotify)
-
-        await state.restoreSpotifySession()
-        XCTAssertFalse(state.connected)
-
-        spotify.restoreError = nil
-        spotify.restored = SpotifySession(clientID: "cid", displayName: "Taylor")
-        await state.restoreSpotifySession()
-
-        XCTAssertTrue(state.connected)
-        XCTAssertEqual(state.spotifyDisplayName, "Taylor")
-    }
+    // MARK: - Late completion
 
     func testLateCreateCompletionKeepsCapturedNameAndStep() async throws {
         let spotify = SpotifyFake()
@@ -272,6 +283,8 @@ final class OnboardingStateTests: XCTestCase {
         XCTAssertEqual(state.lists.last?.name, "Original")
     }
 
+    // MARK: - Chat reload
+
     func testReloadChatsSkipsWhenAlreadyLoadedAndKeepsSelection() async throws {
         var messages = MessagesFake()
         messages.chats = [GroupChat(guid: "chat-guid", name: "Friends", messageCount: 10, lastDate: 0, linkCount: 2)]
@@ -287,6 +300,8 @@ final class OnboardingStateTests: XCTestCase {
         XCTAssertEqual(messages.groupChatsCount, 1)
         XCTAssertEqual(state.pickedChat?.guid, "chat-guid")
     }
+
+    // MARK: - Helpers
 
     /// Polls until `condition` holds (up to ~3s); the caller asserts the awaited outcome after.
     private func poll(until condition: @autoclosure () -> Bool) async throws {

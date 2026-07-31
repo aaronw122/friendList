@@ -187,6 +187,58 @@ final class OnboardingStateTests: XCTestCase {
         XCTAssertEqual(persistence.seenURIs["playlist-id"], Set(state.scannedTrackURIs))
     }
 
+    func testPendingCreationDoesNotLeakAcrossChats() async {
+        let spotify = SpotifyFake()
+        spotify.partialCreation = (id: "playlist-a", url: "https://open.spotify.com/playlist/a", added: 1)
+        let persistence = PersistenceFake()
+        let state = makeState(spotify: spotify, persistence: persistence)
+        state.connected = true
+        state.step = 8
+        state.chats = [ChatSample(name: "A", links: 2, guid: "chat-a"),
+                       ChatSample(name: "B", links: 2, guid: "chat-b")]
+        state.pickedID = "chat-a"
+        state.scannedTrackURIs = ["spotify:track:a1", "spotify:track:a2"]
+        await state.createPlaylist()
+
+        state.go(to: 7); state.go(to: 4); state.go(to: 3)
+        state.pickedID = "chat-b"
+        state.scannedTrackURIs = ["spotify:track:b1", "spotify:track:b2", "spotify:track:b3"]
+        state.go(to: 8)
+        spotify.partialCreation = nil
+        await state.createPlaylist()
+
+        XCTAssertEqual(spotify.createCallCount, 2)
+        XCTAssertEqual(spotify.appended, [])
+        XCTAssertNotEqual(state.lists.last?.spotifyID, "playlist-a")
+        XCTAssertNil(persistence.seenURIs["playlist-a"])
+        XCTAssertEqual(state.lists.last?.chatGUID, "chat-b")
+        XCTAssertEqual(persistence.seenURIs["playlist-id"], Set(state.scannedTrackURIs))
+    }
+
+    func testPendingCreationDroppedWhenRenamed() async {
+        let spotify = SpotifyFake()
+        spotify.partialCreation = (id: "playlist-a", url: "https://open.spotify.com/playlist/a", added: 1)
+        let state = makeState(spotify: spotify)
+        state.connected = true
+        state.step = 8
+        state.chats = [ChatSample(name: "Friends", links: 2, guid: "chat-guid")]
+        state.pickedID = "chat-guid"
+        state.name = "Original"
+        state.scannedTrackURIs = ["spotify:track:one", "spotify:track:two"]
+        await state.createPlaylist()
+
+        state.go(to: 7)
+        state.name = "Changed"
+        state.go(to: 8)
+        spotify.partialCreation = nil
+        await state.createPlaylist()
+
+        XCTAssertEqual(spotify.createCallCount, 2)
+        XCTAssertEqual(spotify.appended, [])
+        XCTAssertEqual(spotify.lastCreateRequest?.name, "Changed")
+        XCTAssertEqual(state.lists.last?.name, "Changed")
+    }
+
     func testRestoreRetriesAfterTransientFailure() async {
         let spotify = SpotifyFake(savedID: "cid", restoreError: SpotifyError.http(500, "server error"))
         let state = makeState(spotify: spotify)

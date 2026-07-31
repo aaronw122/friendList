@@ -78,6 +78,8 @@ final class OnboardingState {
     private struct PendingCreation {
         let id: String
         let url: String
+        let chatGUID: String
+        let name: String
         var added: Int
     }
 
@@ -369,7 +371,8 @@ final class OnboardingState {
         createPct = 0
         createLabel = "Creating the playlist on Spotify…"
         do {
-            let result = try await createOrResume(name: playlistName, description: desc, uris: uris)
+            let result = try await createOrResume(name: playlistName, description: desc,
+                                                  chatGUID: chatGUID, uris: uris)
             pendingCreation = nil
             createPct = 1
             finishCreation(named: playlistName, chatName: chatName, chatGUID: chatGUID,
@@ -390,7 +393,11 @@ final class OnboardingState {
 
     // Resumes a partially filled playlist when one exists; otherwise creates from scratch.
     @MainActor
-    private func createOrResume(name: String, description: String, uris: [String]) async throws -> SpotifyPlaylistResult {
+    private func createOrResume(name: String, description: String, chatGUID: String, uris: [String]) async throws -> SpotifyPlaylistResult {
+        // A pending playlist resumes only for the same chat and name; any other context abandons it.
+        if let pending = pendingCreation, pending.chatGUID != chatGUID || pending.name != name {
+            pendingCreation = nil
+        }
         if let pending = pendingCreation {
             createLabel = "Adding the remaining tracks…"
             let remaining = Array(uris.dropFirst(pending.added))
@@ -401,7 +408,8 @@ final class OnboardingState {
                 }
                 return SpotifyPlaylistResult(id: pending.id, url: pending.url, added: uris.count)
             } catch {
-                pendingCreation = PendingCreation(id: pending.id, url: pending.url, added: landed)
+                pendingCreation = PendingCreation(id: pending.id, url: pending.url,
+                                                  chatGUID: chatGUID, name: name, added: landed)
                 throw error
             }
         }
@@ -415,7 +423,8 @@ final class OnboardingState {
             }
         } catch let partial as SpotifyPartialCreationFailure {
             // The playlist exists on Spotify; remember it so retry appends instead of duplicating.
-            pendingCreation = PendingCreation(id: partial.id, url: partial.url, added: partial.added)
+            pendingCreation = PendingCreation(id: partial.id, url: partial.url,
+                                              chatGUID: chatGUID, name: name, added: partial.added)
             throw partial
         }
     }
@@ -476,7 +485,7 @@ final class OnboardingState {
                         navigate: Bool) {
         let pl = Playlist(
             name: playlistName,
-            songCount: found,
+            songCount: uris.count,
             chatName: chatName,
             externalURL: externalURL,
             spotifyID: spotifyID,

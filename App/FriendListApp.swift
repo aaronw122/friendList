@@ -3,6 +3,9 @@ import SwiftUI
 @main
 struct FriendListMain {
     static func main() {
+        if CommandLine.arguments.contains("--reregister-sync") {
+            BackgroundSyncAgent.forceReregister()
+        }
         if HeadlessSync.isRequested(in: CommandLine.arguments) {
             HeadlessSync.run()
         }

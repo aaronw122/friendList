@@ -101,9 +101,7 @@ final class OnboardingStateTests: XCTestCase {
         state.clientId = "cid"
 
         let run = Task { await state.connectSpotify() }
-        for _ in 0..<200 where !state.connecting {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        try await poll(until: state.connecting)
         XCTAssertTrue(state.connecting)
 
         state.cancelConnect()
@@ -128,9 +126,7 @@ final class OnboardingStateTests: XCTestCase {
         state.step = 4
 
         let run = Task { await state.performScan() }
-        for _ in 0..<300 where messages.scanCount == 0 {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        try await poll(until: messages.scanCount > 0)
         XCTAssertEqual(messages.scanCount, 1)
 
         state.pickedID = "chat-b"
@@ -266,9 +262,7 @@ final class OnboardingStateTests: XCTestCase {
         state.scannedTrackURIs = ["spotify:track:one"]
 
         let run = Task { await state.createPlaylist() }
-        for _ in 0..<300 where spotify.lastCreateRequest == nil {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        try await poll(until: spotify.lastCreateRequest != nil)
         state.go(to: 7)
         state.name = "Changed"
         await run.value
@@ -284,9 +278,7 @@ final class OnboardingStateTests: XCTestCase {
         let state = makeState(spotify: SpotifyFake(), messages: messages)
 
         state.reloadChats()
-        for _ in 0..<300 where state.chats.isEmpty {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        try await poll(until: !state.chats.isEmpty)
         XCTAssertEqual(state.chats.first?.id, "chat-guid")
 
         state.pickedID = "chat-guid"
@@ -294,6 +286,13 @@ final class OnboardingStateTests: XCTestCase {
 
         XCTAssertEqual(messages.groupChatsCount, 1)
         XCTAssertEqual(state.pickedChat?.guid, "chat-guid")
+    }
+
+    /// Polls until `condition` holds (up to ~3s); the caller asserts the awaited outcome after.
+    private func poll(until condition: @autoclosure () -> Bool) async throws {
+        for _ in 0..<300 where !condition() {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
     }
 
     private func makeState(spotify: SpotifyFake,

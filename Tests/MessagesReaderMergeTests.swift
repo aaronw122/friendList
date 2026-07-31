@@ -66,21 +66,3 @@ final class MessagesReaderMergeTests: XCTestCase {
         XCTAssertEqual(merged[0].display, "the boys")
     }
 }
-
-final class LinkParserShortLinkTests: XCTestCase {
-    private let parser = LinkParser()
-
-    func testCountsSpotifyShortLinks() {
-        let text = "listen https://spotify.link/AbC123xyz and also spotify.link/ZZ99"
-        XCTAssertEqual(parser.spotifyShortLinkCount(in: text), 2)
-    }
-
-    func testIgnoresFullSpotifyURLsAndEmptyText() {
-        XCTAssertEqual(parser.spotifyShortLinkCount(in: "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6"), 0)
-        XCTAssertEqual(parser.spotifyShortLinkCount(in: ""), 0)
-    }
-
-    func testShortLinksAreNotReturnedAsTrackURIs() {
-        XCTAssertTrue(parser.spotifyTrackURIs(in: "https://spotify.link/AbC123xyz").isEmpty)
-    }
-}

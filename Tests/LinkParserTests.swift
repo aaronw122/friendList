@@ -1,7 +1,6 @@
 import XCTest
 @testable import FriendList
 
-// spotify.link short-link counting basics live in LinkParserShortLinkTests (MessagesReaderMergeTests.swift).
 final class LinkParserTests: XCTestCase {
     private let parser = LinkParser()
     private let id = "6rqhFgbbKwnb9MLmUQDhG6"
@@ -70,17 +69,21 @@ final class LinkParserTests: XCTestCase {
                        Array(repeating: "spotify:track:\(id)", count: 3))
     }
 
-    // MARK: short-link edge cases
+    // MARK: spotify.link short links
 
-    func testShortLinkCountIsCaseInsensitive() {
+    func testShortLinkVariantsAreCounted() {
+        XCTAssertEqual(parser.spotifyShortLinkCount(in: "listen https://spotify.link/AbC123xyz and also spotify.link/ZZ99"), 2)
         XCTAssertEqual(parser.spotifyShortLinkCount(in: "SPOTIFY.LINK/AbC123"), 1)
-    }
-
-    func testShortLinkWithQueryCountsOnce() {
         XCTAssertEqual(parser.spotifyShortLinkCount(in: "https://spotify.link/AbC123?si=xyz"), 1)
     }
 
-    func testShortLinkWithoutSlugDoesNotCount() {
+    func testFullURLsMissingSlugsAndEmptyTextAreNotCounted() {
+        XCTAssertEqual(parser.spotifyShortLinkCount(in: "https://open.spotify.com/track/\(id)"), 0)
         XCTAssertEqual(parser.spotifyShortLinkCount(in: "https://spotify.link/ and nothing after"), 0)
+        XCTAssertEqual(parser.spotifyShortLinkCount(in: ""), 0)
+    }
+
+    func testShortLinksAreNotReturnedAsTrackURIs() {
+        XCTAssertTrue(parser.spotifyTrackURIs(in: "https://spotify.link/AbC123xyz").isEmpty)
     }
 }

@@ -16,4 +16,18 @@ enum BackgroundSyncAgent {
         guard service.status != .enabled else { return }
         try? service.register()
     }
+
+    // Escape hatch for a stale launchd code requirement (EX_CONFIG after rebuilds).
+    static func forceReregister() -> Never {
+        let service = service()
+        try? service.unregister()
+        do {
+            try service.register()
+            print("re-registered \(label); status=\(service.status.rawValue)")
+            exit(0)
+        } catch {
+            print("re-register failed: \(error)")
+            exit(Int32(EX_CONFIG))
+        }
+    }
 }

@@ -6,6 +6,16 @@ struct SpotifyPlaylistResult: Sendable {
     let added: Int
 }
 
+/// Thrown when the playlist was created but not fully filled, so callers can resume instead of duplicating.
+struct SpotifyPartialCreationFailure: LocalizedError {
+    let id: String
+    let url: String
+    let added: Int
+    let underlying: Error
+
+    var errorDescription: String? { underlying.localizedDescription }
+}
+
 struct SpotifySession: Sendable, Equatable {
     let clientID: String
     let displayName: String
@@ -86,7 +96,12 @@ actor SpotifyService: SpotifyProviding {
             progress(1, "Done")
         }
         for (i, batch) in batches.enumerated() {
-            try await client.addItems(playlistID: playlist.id, uris: batch)
+            do {
+                try await client.addItems(playlistID: playlist.id, uris: batch)
+            } catch {
+                throw SpotifyPartialCreationFailure(id: playlist.id, url: playlist.external_urls.spotify,
+                                                    added: added, underlying: error)
+            }
             added += batch.count
             let frac = 0.1 + 0.85 * Double(i + 1) / Double(batches.count)
             progress(frac, "Adding tracks… \(added)/\(trackURIs.count)")

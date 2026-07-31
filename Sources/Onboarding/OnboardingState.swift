@@ -4,11 +4,12 @@ import Observation
 // MARK: - Models
 
 struct ChatSample: Identifiable, Hashable {
-    let id = UUID()
+    // Identity is the stable chat GUID so reloads never invalidate a selection.
+    var id: String { guid }
     let name: String
     let links: Int
     var pinned: Bool = false
-    var guid: String? = nil
+    let guid: String
 }
 
 struct Playlist: Identifiable, Hashable {
@@ -31,9 +32,10 @@ final class OnboardingState {
     var goingBack: Bool = false
 
     var access: Bool = false
-    var pickedID: UUID? = nil
+    var pickedID: String? = nil
     var chatSearch: String = ""
-    var loadError: String? = nil
+    var scanError: String? = nil
+    var createError: String? = nil
 
     var clientId: String = ""
     var connected: Bool = false
@@ -53,6 +55,7 @@ final class OnboardingState {
 
     var scannedTrackURIs: [String] = []
     var youtubeCount: Int = 0
+    var shortLinkCount: Int = 0
 
     var lists: [Playlist] = []
     var lastCreatedURL: String = ""
@@ -69,6 +72,16 @@ final class OnboardingState {
     @ObservationIgnored private var chatsLoading = false
     @ObservationIgnored private var restoreTask: Task<SpotifyRestoreResult, Never>?
     @ObservationIgnored private var connectTask: Task<String, Error>?
+    @ObservationIgnored private var pendingCreation: PendingCreation?
+
+    // A playlist that was created but only partially filled; retry appends instead of re-creating.
+    private struct PendingCreation {
+        let id: String
+        let url: String
+        let chatGUID: String
+        let name: String
+        var added: Int
+    }
 
     private struct SpotifyRestoreResult: Sendable {
         let clientID: String?
@@ -143,9 +156,8 @@ final class OnboardingState {
         }
     }
 
-    /// FDA may apply live or require relaunch through the resume marker.
+    /// FDA can apply live; polling notices the grant without a relaunch.
     func requestAccess() {
-        Persistence.resumeAtPicker = true
         FullDiskAccess.openSettings()
         startAccessPolling()
     }
@@ -163,7 +175,6 @@ final class OnboardingState {
                 if self?.messages.canRead() == true {
                     self?.access = true
                     self?.reloadChats()
-                    Persistence.resumeAtPicker = false
                     return
                 }
                 try? await Task.sleep(for: .seconds(1.5))
@@ -173,7 +184,8 @@ final class OnboardingState {
 
     // Run the chat scan off-main to avoid stalling the picker transition.
     func reloadChats() {
-        guard !chatsLoading else { return }
+        // Loaded data stays put; a re-appearing picker must not re-run the expensive link-count pass.
+        guard chats.isEmpty, !chatsLoading else { return }
         chatsLoading = true
         let reader = messages
         Task { @MainActor in
@@ -185,10 +197,8 @@ final class OnboardingState {
                     }
                 }.value
                 chats = loaded
-                loadError = nil
             } catch {
                 chats = []
-                loadError = error.localizedDescription
             }
         }
     }
@@ -203,33 +213,45 @@ final class OnboardingState {
         scanLabel = "Opening the local Messages database…"
         scanPct = 0
         found = 0
+        scanError = nil
 
         let reader = messages
-        let result: ChatScan = await withCheckedContinuation { cont in
+        let outcome: Result<ChatScan, Error> = await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     let scan = try reader.scan(chatGUID: guid) { p in
                         DispatchQueue.main.async { [weak self] in
-                            self?.scanPct = p.fraction
-                            self?.found = p.found
-                            self?.scanLabel = p.label
+                            guard let self, self.pickedChat?.guid == guid else { return }
+                            self.scanPct = p.fraction
+                            self.found = p.found
+                            self.scanLabel = p.label
                         }
                     }
-                    cont.resume(returning: scan)
+                    cont.resume(returning: .success(scan))
                 } catch {
-                    DispatchQueue.main.async { [weak self] in self?.loadError = error.localizedDescription }
-                    cont.resume(returning: ChatScan(trackURIs: [], youtubeCount: 0, messagesScanned: 0))
+                    cont.resume(returning: .failure(error))
                 }
             }
         }
 
-        scannedTrackURIs = result.trackURIs
-        youtubeCount = result.youtubeCount
-        found = result.trackURIs.count
-        scanPct = 1
-        scanLabel = result.trackURIs.isEmpty
-            ? "No Spotify links found in this chat"
-            : "Found \(result.trackURIs.count) songs"
+        // A stale scan of an abandoned chat must never overwrite the current selection's results.
+        guard pickedChat?.guid == guid else { return }
+
+        switch outcome {
+        case .success(let result):
+            scannedTrackURIs = result.trackURIs
+            youtubeCount = result.youtubeCount
+            shortLinkCount = result.spotifyShortLinkCount
+            found = result.trackURIs.count
+            scanPct = 1
+            scanLabel = result.trackURIs.isEmpty
+                ? "No Spotify links found in this chat"
+                : "Found \(result.trackURIs.count) songs"
+        case .failure(let error):
+            scanPct = 1
+            scanError = error.localizedDescription
+            scanLabel = "Couldn't read this chat"
+        }
     }
 
     // MARK: - Spotify connect (M2)
@@ -239,6 +261,8 @@ final class OnboardingState {
         guard !connected else { return }
 
         let restoration = await spotifyRestorationResult()
+        // A failed probe must not stay memoized; the next attempt retries the restore.
+        if case .failure = restoration.result { restoreTask = nil }
         applySpotifyRestoration(restoration)
     }
 
@@ -336,31 +360,72 @@ final class OnboardingState {
         createInFlight = true
         defer { createInFlight = false }
 
+        // Capture everything at entry so a completion after navigation can't read drifted state.
+        let fromStep = step
+        let playlistName = name.isEmpty ? selectedChatName : name
+        let chatName = selectedChatName
+        let chatGUID = pickedChat?.guid ?? ""
+        let uris = scannedTrackURIs
+
+        createError = nil
         createPct = 0
         createLabel = "Creating the playlist on Spotify…"
-        let playlistName = name.isEmpty ? selectedChatName : name
-        let description = desc
-        let uris = scannedTrackURIs
         do {
-            let result = try await spotify.createPlaylist(
-                name: playlistName, description: description, trackURIs: uris
-            ) { frac, label in
+            let result = try await createOrResume(name: playlistName, description: desc,
+                                                  chatGUID: chatGUID, uris: uris)
+            pendingCreation = nil
+            createPct = 1
+            finishCreation(named: playlistName, chatName: chatName, chatGUID: chatGUID,
+                           uris: uris, externalURL: result.url, spotifyID: result.id,
+                           navigate: step == fromStep)
+        } catch {
+            let underlying = (error as? SpotifyPartialCreationFailure)?.underlying ?? error
+            if underlying.isSpotifyAuthenticationFailure {
+                connected = false
+                connectError = "Your Spotify session expired. Please reconnect."
+                if step == fromStep { go(to: 5) }
+            } else if step == fromStep {
+                createError = underlying.localizedDescription
+                createLabel = "Couldn't finish"
+            }
+        }
+    }
+
+    // Resumes a partially filled playlist when one exists; otherwise creates from scratch.
+    @MainActor
+    private func createOrResume(name: String, description: String, chatGUID: String, uris: [String]) async throws -> SpotifyPlaylistResult {
+        // A pending playlist resumes only for the same chat and name; any other context abandons it.
+        if let pending = pendingCreation, pending.chatGUID != chatGUID || pending.name != name {
+            pendingCreation = nil
+        }
+        if let pending = pendingCreation {
+            createLabel = "Adding the remaining tracks…"
+            let remaining = Array(uris.dropFirst(pending.added))
+            var landed = pending.added
+            do {
+                _ = try await spotify.appendTracks(playlistID: pending.id, trackURIs: remaining) { batch in
+                    landed += batch.count
+                }
+                return SpotifyPlaylistResult(id: pending.id, url: pending.url, added: uris.count)
+            } catch {
+                pendingCreation = PendingCreation(id: pending.id, url: pending.url,
+                                                  chatGUID: chatGUID, name: name, added: landed)
+                throw error
+            }
+        }
+        do {
+            return try await spotify.createPlaylist(name: name, description: description, trackURIs: uris) { frac, label in
                 Task { @MainActor in
                     // Out-of-order progress callbacks must not regress the displayed value.
                     self.createPct = max(self.createPct, frac)
                     self.createLabel = label
                 }
             }
-            createPct = 1
-            completeCreation(externalURL: result.url, spotifyID: result.id)
-        } catch {
-            if error.isSpotifyAuthenticationFailure {
-                connected = false
-                connectError = "Your Spotify session expired. Please reconnect."
-                go(to: 5)
-            } else {
-                createLabel = "Couldn't finish: \(error.localizedDescription)"
-            }
+        } catch let partial as SpotifyPartialCreationFailure {
+            // The playlist exists on Spotify; remember it so retry appends instead of duplicating.
+            pendingCreation = PendingCreation(id: partial.id, url: partial.url,
+                                              chatGUID: chatGUID, name: name, added: partial.added)
+            throw partial
         }
     }
 
@@ -415,14 +480,16 @@ final class OnboardingState {
         }
     }
 
-    func completeCreation(externalURL: String = "", spotifyID: String = "") {
+    private func finishCreation(named playlistName: String, chatName: String, chatGUID: String,
+                        uris: [String], externalURL: String, spotifyID: String,
+                        navigate: Bool) {
         let pl = Playlist(
-            name: name.isEmpty ? selectedChatName : name,
-            songCount: found,
-            chatName: selectedChatName,
+            name: playlistName,
+            songCount: uris.count,
+            chatName: chatName,
             externalURL: externalURL,
             spotifyID: spotifyID,
-            chatGUID: pickedChat?.guid ?? ""
+            chatGUID: chatGUID
         )
         // Spotify ID is canonical; use name and chat only when it is absent.
         let matchIdx = lists.firstIndex(where: {
@@ -437,10 +504,11 @@ final class OnboardingState {
         lastCreatedURL = externalURL
         persistPlaylist(pl)
         if !spotifyID.isEmpty {
-            persistence.recordSeen(spotifyID: spotifyID, uris: scannedTrackURIs)
+            persistence.recordSeen(spotifyID: spotifyID, uris: uris)
         }
         persistence.didOnboard = true
-        go(to: 9)
+        // Record-keeping always happens; navigation only when the user is still on the creating step.
+        if navigate { go(to: 9) }
     }
 
     private func persistPlaylist(_ playlist: Playlist) {
@@ -458,10 +526,14 @@ final class OnboardingState {
         chatSearch = ""
         scannedTrackURIs = []
         youtubeCount = 0
+        shortLinkCount = 0
         found = 0
         name = ""
         scanPct = 0
         createPct = 0
+        scanError = nil
+        createError = nil
+        pendingCreation = nil
         go(to: 3)
     }
 

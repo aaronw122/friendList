@@ -51,13 +51,6 @@ enum Persistence {
 
     static var storeDirectoryOverride: URL?
 
-    // MARK: FDA relaunch resume
-    private static let kResumeAtPicker = "friendlist.resumeAtPicker"
-    static var resumeAtPicker: Bool {
-        get { defaults.bool(forKey: kResumeAtPicker) }
-        set { defaults.set(newValue, forKey: kResumeAtPicker) }
-    }
-
     // MARK: Onboarding complete
     private static let kDidOnboard = "friendlist.didOnboard"
     static var didOnboard: Bool {
